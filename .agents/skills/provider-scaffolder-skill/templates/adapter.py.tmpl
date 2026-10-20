@@ -1,0 +1,53 @@
+"""$class_name: TODO one line describing the target infrastructure.
+
+Starter implementation: an echo adapter that already passes the shared provider contract,
+so you always start from green. Replace the marked TODOs, keep the rules:
+
+* Implement ``stream_execute`` (async generator) and ``health_check`` only; the base class
+  derives ``execute``.
+* Yield events with ``seq=0`` and finish with exactly one DONE event.
+* On failure RAISE a domain ``ProviderError`` subclass (see errors.py); never end silently.
+* Never put secrets in events, logs or exception messages.
+* Import nothing from sibling providers or other infrastructure adapters.
+"""
+
+from __future__ import annotations
+
+from collections.abc import AsyncIterator
+
+from vibe.domain.enums import EventType
+from vibe.domain.models import ExecutionTask, HealthStatus, ProviderCapabilities, StreamEvent
+from vibe.infrastructure.provider_kit import BaseAgentRunner
+from vibe.infrastructure.providers.$name.errors import translate_error
+from vibe.infrastructure.providers.$name.mapping import build_request
+
+
+class $class_name(BaseAgentRunner):
+    # TODO: declare capabilities honestly. `idempotent=False` for anything that mutates state
+    # (files, remote resources): it disables blind automatic retries after side effects.
+    default_capabilities = ProviderCapabilities(
+        streaming=True,
+        supports_cancel=False,
+        idempotent=True,
+        can_modify_workspace=False,
+        reports_usage=False,
+        supports_resume=False,
+    )
+
+    async def health_check(self) -> HealthStatus:
+        # TODO: cheap real probe (binary on PATH, auth ping...). Never raise.
+        return HealthStatus.up()
+
+    async def stream_execute(self, task: ExecutionTask) -> AsyncIterator[StreamEvent]:
+        request = build_request(task)
+        yield self.event(task, EventType.STATUS, state="started", provider=self.config.id)
+        try:
+            # TODO: replace the echo below with the real call and yield TOKEN events as
+            # data arrives (and THOUGHT / TOOL_CALL / ARTIFACT / USAGE where available).
+            words = request["prompt"].split(" ")
+            for index, word in enumerate(words):
+                suffix = " " if index < len(words) - 1 else ""
+                yield self.event(task, EventType.TOKEN, text=word + suffix)
+        except Exception as exc:
+            raise translate_error(exc, provider_id=self.config.id) from exc
+        yield self.event(task, EventType.DONE, finish_reason="stop")

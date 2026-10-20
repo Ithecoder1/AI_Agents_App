@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Vibe Forge — Multi-Provider Agent Execution Engine</title>
+  <meta name="description" content="Author vibe-coding prompts and execute them across AI agent backends with real-time streaming, diff viewing, and quality validation." />
+  
+  <!-- Typography: Inter & JetBrains Mono -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+  
+  <link rel="stylesheet" href="/assets/css/style.css" />
+</head>
+<body>
+
+  <!-- App Header -->
+  <header class="app-header" id="app-header">
+    <div class="brand-wrapper" id="brand-wrapper">
+      <div class="brand-icon" id="brand-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24">
+          <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" stroke="#fff" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </div>
+      <div class="brand-title-group" id="brand-title-group">
+        <h1 id="app-title">Vibe Forge</h1>
+        <p id="app-subtitle">Multi-Provider Agent Engine</p>
+      </div>
+    </div>
+
+    <div class="header-status-group" id="header-status-group">
+      <div class="badge" id="provider-status-badge">
+        <span class="badge-dot active pulse" id="provider-health-dot"></span>
+        <span id="provider-status-text">Ready</span>
+      </div>
+      <div class="badge" id="api-health-badge">
+        <span class="badge-dot active" id="api-health-dot"></span>
+        <span id="api-health-text">Engine v0.1.0</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Grid Workspace -->
+  <main class="main-container" id="main-container">
+
+    <!-- Left Panel: Vibe Studio (Prompt Authoring & Configuration) -->
+    <section class="card-panel" id="panel-vibe-studio" aria-label="Vibe Studio Prompt Editor">
+      <div class="panel-header" id="studio-header">
+        <div class="panel-title" id="studio-title">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+          </svg>
+          <span>Vibe Studio</span>
+        </div>
+        <div class="preset-bar" id="preset-bar">
+          <button type="button" class="btn-chip preset-btn" data-preset="refactor" id="preset-refactor">⚡ Refactor Pool</button>
+          <button type="button" class="btn-chip preset-btn" data-preset="review" id="preset-review">🔒 Security Review</button>
+          <button type="button" class="btn-chip preset-btn" data-preset="tests" id="preset-tests">🧪 State Tests</button>
+        </div>
+      </div>
+
+      <div class="panel-body" id="studio-body">
+        
+        <!-- Provider & Model Selection -->
+        <div style="display:grid; grid-template-columns: 1fr 1fr; gap:12px;" id="config-row">
+          <div class="form-group" id="group-provider">
+            <label class="form-label" for="provider-select" id="lbl-provider">
+              <span>Agent Infrastructure</span>
+            </label>
+            <select class="custom-select" id="provider-select" aria-label="Select Agent Provider">
+              <!-- Populated dynamically from /api/providers -->
+              <option value="fake">Fake (offline demo)</option>
+              <option value="openrouter-default" disabled>OpenRouter (disabled)</option>
+              <option value="antigravity-headless" disabled>Antigravity CLI (disabled)</option>
+            </select>
+          </div>
+
+          <div class="form-group" id="group-model">
+            <label class="form-label" for="model-select" id="lbl-model">
+              <span>Target Model</span>
+            </label>
+            <select class="custom-select" id="model-select" aria-label="Select Model">
+              <option value="fake-model">fake-model</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- System Instructions -->
+        <div class="form-group" id="group-system-prompt">
+          <label class="form-label" for="system-prompt-input" id="lbl-system-prompt">
+            <span>System Instructions</span>
+            <span class="hint">Role &amp; Guardrails</span>
+          </label>
+          <textarea class="custom-textarea" id="system-prompt-input" rows="3" placeholder="Define the agent persona, domain boundaries, and explicit negative constraints..." aria-label="System Instructions">You are a Principal Software Architect. Focus on clean code, domain isolation, and resilient patterns. Output unified diffs where appropriate.</textarea>
+        </div>
+
+        <!-- User Prompt / Intention -->
+        <div class="form-group" id="group-user-prompt">
+          <label class="form-label" for="user-prompt-input" id="lbl-user-prompt">
+            <span>User Prompt / Intention</span>
+            <span class="hint">Vibe coding task</span>
+          </label>
+          <textarea class="custom-textarea" id="user-prompt-input" rows="5" placeholder="Describe the feature, refactoring, or code review task you want the agent to execute..." aria-label="User Prompt">Refactor the database connection pool to support automatic retry backoff on connection timeouts.</textarea>
+        </div>
+
+        <!-- Realtime Linter & Token Economy Widget -->
+        <div class="linter-box" id="linter-box">
+          <div class="linter-header" id="linter-header">
+            <div style="display:flex; align-items:center; gap:8px;">
+              <span style="font-size:12px; font-weight:600; color:#cbd5e1;">Prompt Quality &amp; Hygiene</span>
+              <div class="score-pill good" id="lint-score-badge">
+                <span>Score:</span>
+                <span id="lint-score-val">100</span>
+              </div>
+            </div>
+            <div style="display:flex; align-items:center; gap:8px;">
+              <span style="font-size:11px; color:#94a3b8;" id="token-estimate-badge">~18 tokens</span>
+              <button type="button" class="btn-chip" id="btn-lint-prompt">Lint Check</button>
+            </div>
+          </div>
+          <div class="linter-issues-list" id="linter-issues-list">
+            <!-- Populated via /api/prompts/lint -->
+          </div>
+        </div>
+
+        <!-- Action Controls -->
+        <div class="action-button-group" id="action-button-group">
+          <button type="button" class="btn-primary" id="btn-execute">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+              <polygon points="5 3 19 12 5 21 5 3"/>
+            </svg>
+            <span>Run Vibe Stream</span>
+          </button>
+          <button type="button" class="btn-secondary" id="btn-stop" disabled>Stop</button>
+          <button type="button" class="btn-secondary" id="btn-clear">Clear</button>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- Right Panel: Execution Dashboard & Artifacts -->
+    <section class="card-panel" id="panel-execution-dashboard" aria-label="Execution Dashboard">
+      <div class="panel-header" id="dashboard-header">
+        <div class="tab-nav" id="tab-nav" role="tablist">
+          <button type="button" class="tab-btn active" data-tab="tab-terminal" id="btn-tab-terminal" role="tab">Live Console</button>
+          <button type="button" class="tab-btn" data-tab="tab-diff" id="btn-tab-diff" role="tab">Diff Artifact</button>
+          <button type="button" class="tab-btn" data-tab="tab-raw" id="btn-tab-raw" role="tab">Raw Event Stream</button>
+        </div>
+
+        <div style="display:flex; align-items:center; gap:10px;">
+          <span style="font-size:11px; color:#64748b;">Status:</span>
+          <span class="badge" id="task-status-badge" style="font-family:var(--font-mono); font-weight:700;">IDLE</span>
+        </div>
+      </div>
+
+      <!-- Tab 1: Terminal Console -->
+      <div class="tab-content active" id="tab-terminal" role="tabpanel">
+        <div class="terminal-console" id="terminal-output" aria-live="polite">
+          <div class="terminal-line status">Vibe Forge Engine ready. Choose an agent infrastructure and click "Run Vibe Stream".</div>
+        </div>
+      </div>
+
+      <!-- Tab 2: Artifact Diff Viewer -->
+      <div class="tab-content" id="tab-diff" role="tabpanel">
+        <div class="diff-viewer" id="diff-container">
+          <div style="color:#64748b; padding:16px;">No artifacts generated yet...</div>
+        </div>
+      </div>
+
+      <!-- Tab 3: Raw Event JSON Inspector -->
+      <div class="tab-content" id="tab-raw" role="tabpanel">
+        <pre class="terminal-console" id="raw-json-output" style="color:#94a3b8; font-size:11.5px;"></pre>
+      </div>
+
+      <!-- Status Footer -->
+      <div class="status-footer" id="status-footer">
+        <div class="stats-group" id="stats-group">
+          <div class="stat-item" id="stat-item-tokens">
+            <span>Tokens:</span>
+            <strong id="stat-tokens">0 (0 in / 0 out)</strong>
+          </div>
+          <div class="stat-item" id="stat-item-duration">
+            <span>Elapsed:</span>
+            <strong id="stat-duration">0.0s</strong>
+          </div>
+        </div>
+        <div style="font-size:11px; color:#64748b;" id="footer-engine-label">
+          Stream Mode: <strong style="color:#cbd5e1;">WebSocket (Resumable)</strong>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <script src="/assets/js/app.js"></script>
+</body>
+</html>

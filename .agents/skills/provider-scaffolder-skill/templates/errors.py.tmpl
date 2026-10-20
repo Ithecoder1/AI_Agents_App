@@ -1,0 +1,29 @@
+"""Translate native $class_name failures into the domain error taxonomy.
+
+Map by exception TYPE / status code, never by message text. Extend the table as you learn
+the backend's failure modes (HTTP 401 -> AuthenticationError, 429 -> RateLimitedError with
+``retry_after`` from the header, 5xx -> TransientProviderError, ...).
+"""
+
+from __future__ import annotations
+
+import asyncio
+
+from vibe.domain.errors import (
+    ProviderError,
+    ProviderTimeoutError,
+    TransientProviderError,
+)
+
+
+def translate_error(exc: BaseException, *, provider_id: str) -> ProviderError:
+    if isinstance(exc, ProviderError):
+        return exc
+    if isinstance(exc, (asyncio.TimeoutError, TimeoutError)):
+        return ProviderTimeoutError("operation timed out", provider_id=provider_id)
+    if isinstance(exc, (ConnectionError, OSError)):
+        return TransientProviderError(
+            f"connection problem: {type(exc).__name__}", provider_id=provider_id
+        )
+    # Unknown: surface as a generic, non-retryable provider error (don't hide bugs behind retries).
+    return ProviderError(f"unexpected {type(exc).__name__}", provider_id=provider_id)

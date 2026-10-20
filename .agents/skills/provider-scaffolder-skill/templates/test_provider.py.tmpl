@@ -1,0 +1,31 @@
+"""Tests for $class_name. The contract suite is mandatory; add provider-specific tests below."""
+
+from __future__ import annotations
+
+from tests.contract.provider_contract import ProviderContractTests
+from tests.factories import make_config, make_deps
+from vibe.domain.errors import ProviderError, ProviderTimeoutError, TransientProviderError
+from vibe.domain.ports.agent_provider import IAgentProvider
+from vibe.infrastructure.providers.$name import $class_name
+from vibe.infrastructure.providers.$name.errors import translate_error
+
+
+def _provider(**options: object) -> $class_name:
+    return $class_name(make_config("$provider_id", "$kind", options=options), make_deps())
+
+
+class Test${class_name}Contract(ProviderContractTests):
+    def build(self, secret: str) -> IAgentProvider:
+        return _provider(api_key=secret)
+
+    # Override when the provider supports cancel, returning a variant slow enough to interrupt:
+    # def build_slow(self) -> IAgentProvider | None: ...
+
+
+def test_native_errors_map_to_the_domain_taxonomy() -> None:
+    assert isinstance(translate_error(TimeoutError(), provider_id="x"), ProviderTimeoutError)
+    assert isinstance(
+        translate_error(ConnectionResetError(), provider_id="x"), TransientProviderError
+    )
+    original = ProviderError("already domain")
+    assert translate_error(original, provider_id="x") is original

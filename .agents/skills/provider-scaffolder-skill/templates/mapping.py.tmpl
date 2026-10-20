@@ -1,0 +1,25 @@
+"""Domain task -> $class_name request mapping (pure; no I/O, easy to unit-test)."""
+
+from __future__ import annotations
+
+from typing import Any
+
+from vibe.domain.errors import InvalidRequestError, ValidationError
+from vibe.domain.models import ExecutionTask
+
+
+def build_request(task: ExecutionTask) -> dict[str, Any]:
+    """Render the prompt and translate execution params into the native request shape."""
+    try:
+        system, prompt = task.prompt_snapshot.render()
+    except ValidationError as exc:
+        raise InvalidRequestError(str(exc)) from exc
+    params = task.params
+    return {
+        "system": system,
+        "prompt": prompt,
+        "model": params.model,
+        "temperature": params.temperature,
+        "max_tokens": params.max_tokens,
+        "extra": dict(params.extra),  # provider-specific passthrough, validate before use
+    }

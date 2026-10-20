@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://vibe-forge.local/schemas/providers.schema.json",
+  "title": "Vibe Forge provider definitions",
+  "type": "object",
+  "required": ["providers"],
+  "additionalProperties": false,
+  "properties": {
+    "version": { "type": "integer", "minimum": 1 },
+    "providers": {
+      "type": "array",
+      "description": "Each entry is validated individually against $defs/provider so one bad entry disables only itself.",
+      "items": { "type": "object" }
+    }
+  },
+  "$defs": {
+    "provider": {
+      "type": "object",
+      "required": ["id", "kind"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9_-]*$",
+          "description": "Unique, URL-safe identifier used by the UI/API. Quote ids that YAML reads as booleans (no, off, on, yes, true, false)."
+        },
+        "kind": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Adapter family. Also the entry-point name in group 'vibe.providers' when 'adapter' is omitted."
+        },
+        "display_name": { "type": "string" },
+        "adapter": {
+          "type": "string",
+          "pattern": "^[A-Za-z_][A-Za-z0-9_.]*:[A-Za-z_][A-Za-z0-9_.]*$",
+          "description": "'package.module:Callable' - a class or function (config, deps) -> IAgentProvider."
+        },
+        "enabled": { "type": "boolean", "default": true },
+        "max_concurrency": { "type": "integer", "minimum": 1, "default": 4 },
+        "options": {
+          "type": "object",
+          "description": "Adapter-specific. Use ${VAR} for secrets - never literals."
+        },
+        "capabilities": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Overrides for the adapter's default capabilities.",
+          "properties": {
+            "streaming": { "type": "boolean" },
+            "supports_cancel": { "type": "boolean" },
+            "idempotent": { "type": "boolean" },
+            "can_modify_workspace": { "type": "boolean" },
+            "reports_usage": { "type": "boolean" },
+            "supports_resume": { "type": "boolean" },
+            "models": { "type": "array", "items": { "type": "string" } }
+          }
+        }
+      }
+    }
+  }
+}

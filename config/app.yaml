@@ -1,0 +1,33 @@
+# Application settings. Precedence: env (VIBE_<SECTION>__<KEY>) > app.local.yaml > this file.
+# Values shown are the built-in defaults; unknown keys are rejected at startup.
+server:
+  host: 127.0.0.1        # keep loopback unless security.auth_token is set
+  port: 8000
+
+security:
+  auth_token: ""         # prefer VIBE_AUTH_TOKEN in the environment
+  workspace_roots: []    # absolute paths agents may operate in (or VIBE_WORKSPACE_ROOTS)
+  cors_origins: ["http://localhost:5173", "http://127.0.0.1:5173"]
+
+runner:
+  concurrency: 4
+  queue_size: 100
+  subscriber_buffer: 1000
+
+resilience:
+  max_attempts: 3
+  base_delay_s: 1.0
+  max_delay_s: 30.0
+  jitter: true
+  retry_after_cap_s: 60.0
+  breaker_failure_threshold: 5
+  breaker_reset_s: 30.0
+  connect_timeout_s: 10.0
+  first_token_timeout_s: 60.0
+  idle_timeout_s: 120.0
+  total_timeout_s: 900.0
+
+storage:
+  db_url: sqlite+aiosqlite:///./data/vibe.db
+  artifacts_dir: data/artifacts
+  retention_days: 30

@@ -1,0 +1,39 @@
+# Provider registry. Add a provider by appending an entry here (or in providers.local.yaml,
+# which is git-ignored and merged by `id`). No core code changes are ever required.
+# Secrets: reference env vars as ${VAR}; never write literal keys in this file.
+version: 1
+providers:
+  - id: fake
+    kind: fake
+    display_name: Fake (offline demo)
+    adapter: vibe.infrastructure.providers.fake:FakeProvider
+    enabled: true
+    options:
+      delay_ms: 40
+      emit_artifact: true
+
+  # --- Implemented in Phase 3; disabled until then ---------------------------------
+  - id: openrouter-default
+    kind: openrouter
+    display_name: OpenRouter
+    adapter: vibe.infrastructure.providers.openrouter:OpenRouterProvider
+    enabled: false
+    max_concurrency: 4
+    options:
+      base_url: https://openrouter.ai/api/v1
+      default_model: anthropic/claude-sonnet-4
+      api_key: ${OPENROUTER_API_KEY}
+
+  - id: antigravity-headless
+    kind: antigravity
+    display_name: Antigravity (headless)
+    adapter: vibe.infrastructure.providers.antigravity:AntigravityProvider
+    enabled: false
+    max_concurrency: 1
+    options:
+      mode: cli                 # cli | sdk
+      executable: agy
+      # Flags are unverified until `agy --help` can be checked on this machine.
+      args_template: ["-p", "{prompt}", "--output-format", "stream-json"]
+      allowed_workspaces: []    # absolute paths; the agent may only run inside these
+      skip_permissions: false   # maps to --dangerously-skip-permissions; keep false

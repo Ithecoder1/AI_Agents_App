@@ -8,6 +8,7 @@ from pathlib import Path
 
 from vibe.application.registry import ProviderRegistry, ProviderState
 from vibe.application.settings import AppSettings
+from vibe.application.workspace_manager import WorkspaceManager
 from vibe.domain.ports.agent_provider import ProviderDeps
 from vibe.infrastructure.config import (
     EnvSecretResolver,
@@ -15,6 +16,7 @@ from vibe.infrastructure.config import (
     load_provider_configs,
     load_settings,
 )
+from vibe.infrastructure.workspace import YamlManifestParser
 
 _log = logging.getLogger(__name__)
 
@@ -52,3 +54,12 @@ def default_registry() -> tuple[ProviderRegistry, AppSettings]:
     root = repo_root()
     env = load_environment(root / ".env")
     return build_registry(root / "config", env)
+
+
+def build_workspace_manager(root: Path | None = None) -> WorkspaceManager:
+    base = root or repo_root()
+    return WorkspaceManager(base, manifest_parser=YamlManifestParser())
+
+
+def default_workspace_manager() -> WorkspaceManager:
+    return build_workspace_manager(repo_root())

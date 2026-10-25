@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Vibe Forge — Multi-Provider Agent Execution Engine</title>
-  <meta name="description" content="Author vibe-coding prompts and execute them across AI agent backends with real-time streaming, diff viewing, and quality validation." />
+  <meta name="description" content="Author vibe-coding prompts and execute them across AI agent backends with real-time streaming, multi-workspace sandboxing, and quality validation." />
   
   <!-- Typography: Inter & JetBrains Mono -->
   <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -25,7 +25,7 @@
       </div>
       <div class="brand-title-group" id="brand-title-group">
         <h1 id="app-title">Vibe Forge</h1>
-        <p id="app-subtitle">Multi-Provider Agent Engine</p>
+        <p id="app-subtitle">Autonomous Meta-Agent Studio</p>
       </div>
     </div>
 
@@ -40,6 +40,23 @@
       </div>
     </div>
   </header>
+
+  <!-- Multi-Workspace Tab Bar -->
+  <nav class="workspace-bar" id="workspace-bar" aria-label="Project Workspaces">
+    <div class="workspace-tabs-container">
+      <div class="workspace-tabs-label">Workspaces:</div>
+      <div class="workspace-tabs" id="workspace-tabs" role="tablist">
+        <!-- Populated dynamically via JS -->
+      </div>
+    </div>
+    <button type="button" class="btn-add-workspace" id="btn-add-workspace" title="Register Target Project Directory">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+        <line x1="12" y1="5" x2="12" y2="19"></line>
+        <line x1="5" y1="12" x2="19" y2="12"></line>
+      </svg>
+      <span>+ Add Project</span>
+    </button>
+  </nav>
 
   <!-- Main Grid Workspace -->
   <main class="main-container" id="main-container">
@@ -61,6 +78,25 @@
       </div>
 
       <div class="panel-body" id="studio-body">
+
+        <!-- Active Workspace Context Card -->
+        <div class="workspace-context-card" id="workspace-context-card">
+          <div class="ws-context-header">
+            <div class="ws-context-title">
+              <span class="ws-badge self" id="ws-badge-self">SELF</span>
+              <strong id="ws-active-name">Vibe Forge</strong>
+              <span class="ws-active-id" id="ws-active-id">#root</span>
+            </div>
+            <div class="ws-context-meta">
+              <span class="ws-meta-pill" id="ws-meta-runtime">python:3.10</span>
+              <span class="ws-meta-pill" id="ws-meta-test">pytest</span>
+            </div>
+          </div>
+          <div class="ws-path-row">
+            <span class="ws-path-label">Scope:</span>
+            <code class="ws-path-code" id="ws-active-path">C:\Dev\AI-Agents-App</code>
+          </div>
+        </div>
         
         <!-- Provider & Model Selection -->
         <div style="display:grid; grid-template-columns: 1fr 1fr; gap:12px;" id="config-row">
@@ -71,8 +107,9 @@
             <select class="custom-select" id="provider-select" aria-label="Select Agent Provider">
               <!-- Populated dynamically from /api/providers -->
               <option value="fake">Fake (offline demo)</option>
+              <option value="gemini-default">Google Gemini (thinking)</option>
               <option value="openrouter-default" disabled>OpenRouter (disabled)</option>
-              <option value="antigravity-headless" disabled>Antigravity CLI (disabled)</option>
+              <option value="anthropic-default" disabled>Anthropic Claude (disabled)</option>
             </select>
           </div>
 
@@ -81,7 +118,7 @@
               <span>Target Model</span>
             </label>
             <select class="custom-select" id="model-select" aria-label="Select Model">
-              <option value="fake-model">fake-model</option>
+              <option value="">Default Model</option>
             </select>
           </div>
         </div>
@@ -145,6 +182,7 @@
         <div class="tab-nav" id="tab-nav" role="tablist">
           <button type="button" class="tab-btn active" data-tab="tab-terminal" id="btn-tab-terminal" role="tab">Live Console</button>
           <button type="button" class="tab-btn" data-tab="tab-diff" id="btn-tab-diff" role="tab">Diff Artifact</button>
+          <button type="button" class="tab-btn" data-tab="tab-context" id="btn-tab-context" role="tab">Context &amp; Tree</button>
           <button type="button" class="tab-btn" data-tab="tab-raw" id="btn-tab-raw" role="tab">Raw Event Stream</button>
         </div>
 
@@ -157,7 +195,7 @@
       <!-- Tab 1: Terminal Console -->
       <div class="tab-content active" id="tab-terminal" role="tabpanel">
         <div class="terminal-console" id="terminal-output" aria-live="polite">
-          <div class="terminal-line status">Vibe Forge Engine ready. Choose an agent infrastructure and click "Run Vibe Stream".</div>
+          <div class="terminal-line status">Vibe Forge Meta-Agent Studio ready. Select a workspace and click "Run Vibe Stream".</div>
         </div>
       </div>
 
@@ -168,7 +206,28 @@
         </div>
       </div>
 
-      <!-- Tab 3: Raw Event JSON Inspector -->
+      <!-- Tab 3: Context Inspector & Tree -->
+      <div class="tab-content" id="tab-context" role="tabpanel">
+        <div class="context-inspector" id="context-inspector">
+          <div class="inspector-section">
+            <h3 class="inspector-title">Active Manifest Contract</h3>
+            <pre class="inspector-pre" id="inspector-manifest-json">Loading manifest...</pre>
+          </div>
+          <div class="inspector-section">
+            <h3 class="inspector-title">Documentation &amp; Context Files</h3>
+            <div class="inspector-chips" id="inspector-context-chips">
+              <!-- Loaded from manifest -->
+            </div>
+            <pre class="inspector-pre" id="inspector-doc-preview" style="max-height:160px; font-size:11px;">Select a documentation file above to preview context injection...</pre>
+          </div>
+          <div class="inspector-section">
+            <h3 class="inspector-title">Filtered Workspace Tree</h3>
+            <pre class="inspector-pre tree-pre" id="inspector-tree-view">Loading tree...</pre>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tab 4: Raw Event JSON Inspector -->
       <div class="tab-content" id="tab-raw" role="tabpanel">
         <pre class="terminal-console" id="raw-json-output" style="color:#94a3b8; font-size:11.5px;"></pre>
       </div>
@@ -186,12 +245,66 @@
           </div>
         </div>
         <div style="font-size:11px; color:#64748b;" id="footer-engine-label">
-          Stream Mode: <strong style="color:#cbd5e1;">WebSocket (Resumable)</strong>
+          Target: <strong style="color:var(--accent-cyan);" id="stat-workspace-label">root (Self)</strong> · Stream: <strong style="color:#cbd5e1;">WebSocket</strong>
         </div>
       </div>
     </section>
 
   </main>
+
+  <!-- Modal Dialog: Register Target Workspace -->
+  <div class="modal-backdrop" id="modal-add-workspace" style="display:none;" aria-hidden="true">
+    <div class="modal-dialog" role="dialog" aria-modal="true" aria-labelledby="modal-ws-title">
+      <div class="modal-header">
+        <div class="modal-title" id="modal-ws-title">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+          </svg>
+          <span>Register Target Project Workspace</span>
+        </div>
+        <button type="button" class="modal-close-btn" id="btn-close-modal" aria-label="Close dialog">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p class="modal-desc">
+          Point Vibe Forge to any target codebase on this machine. The engine will discover/synthesize the manifest, sandbox tool executions strictly to its root, and inject its architecture into the agent context.
+        </p>
+        <div class="form-group">
+          <label class="form-label" for="ws-input-path">
+            <span>Directory Path</span>
+            <span class="required" style="color:var(--accent-rose);">*</span>
+          </label>
+          <input type="text" class="custom-input" id="ws-input-path" placeholder="e.g. C:\Dev\llm playground or relative/path" />
+        </div>
+        <div style="display:grid; grid-template-columns: 1fr 1fr; gap:12px;">
+          <div class="form-group">
+            <label class="form-label" for="ws-input-id">
+              <span>Workspace ID</span>
+              <span class="hint">Optional slug</span>
+            </label>
+            <input type="text" class="custom-input" id="ws-input-id" placeholder="e.g. playground" />
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="ws-input-name">
+              <span>Display Name</span>
+              <span class="hint">Optional title</span>
+            </label>
+            <input type="text" class="custom-input" id="ws-input-name" placeholder="e.g. LLM Playground" />
+          </div>
+        </div>
+        <div class="form-checkbox" style="display:flex; align-items:center; gap:8px; margin-top:8px;">
+          <input type="checkbox" id="ws-input-persist" checked />
+          <label for="ws-input-persist" style="font-size:12px; color:#cbd5e1;">Persist <code>.vibe/manifest.yaml</code> if project has no manifest</label>
+        </div>
+        <div class="modal-error" id="modal-error" style="display:none; color:var(--accent-rose); font-size:12px; margin-top:10px; padding:8px; background:rgba(244,63,94,0.1); border-radius:6px; border:1px solid rgba(244,63,94,0.2);"></div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn-secondary" id="btn-cancel-modal">Cancel</button>
+        <button type="button" class="btn-primary" id="btn-confirm-add-ws">
+          <span>Register &amp; Open Workspace</span>
+        </button>
+      </div>
+    </div>
+  </div>
 
   <script src="/assets/js/app.js"></script>
 </body>

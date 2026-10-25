@@ -110,7 +110,7 @@
       });
     } else {
       const opt = document.createElement('option');
-      opt.value = 'default';
+      opt.value = '';
       opt.textContent = 'Default Engine Model';
       el.modelSelect.appendChild(opt);
     }
@@ -189,7 +189,7 @@
     const providerId = el.providerSelect.value;
     const userPrompt = el.userPromptInput.value.trim();
     const systemPrompt = el.systemPromptInput.value.trim();
-    const model = el.modelSelect.value;
+    const model = el.modelSelect.value || null;
 
     if (!userPrompt) {
       alert('Please enter a prompt intention before executing.');

@@ -12,7 +12,9 @@ providers:
       delay_ms: 40
       emit_artifact: true
 
-  # --- Implemented in Phase 3; disabled until then ---------------------------------
+  # --- LLM "thinking" providers: enable once the matching API key is set ------------
+  # Reasoning/thinking is streamed as THOUGHT events. Per-task overrides go in
+  # ExecutionParams.extra (e.g. {"thinking_budget": 4096}, {"reasoning": {"effort": "high"}}).
   - id: openrouter-default
     kind: openrouter
     display_name: OpenRouter
@@ -23,6 +25,28 @@ providers:
       base_url: https://openrouter.ai/api/v1
       default_model: anthropic/claude-sonnet-4
       api_key: ${OPENROUTER_API_KEY}
+
+  - id: gemini-default
+    kind: gemini
+    display_name: Google Gemini
+    adapter: vibe.infrastructure.providers.gemini:GeminiProvider
+    enabled: true
+    max_concurrency: 4
+    options:
+      default_model: gemini-2.5-flash
+      thinking_budget: -1        # -1 dynamic | 0 off | N tokens (omit for non-thinking models)
+      api_key: AIzaSyAGrm75XDoJeFZXPhUYnmRyTHpBnKbmJ4E
+
+  - id: anthropic-default
+    kind: anthropic
+    display_name: Anthropic Claude
+    adapter: vibe.infrastructure.providers.anthropic:AnthropicProvider
+    enabled: false
+    max_concurrency: 4
+    options:
+      default_model: claude-sonnet-4-5
+      thinking_budget: 4096      # extended thinking; must be >= 1024 (omit to disable)
+      api_key: ${ANTHROPIC_API_KEY}
 
   - id: antigravity-headless
     kind: antigravity

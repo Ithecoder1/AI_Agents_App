@@ -215,7 +215,17 @@ async def serve_spa(full_path: str) -> FileResponse:
 
 
 if __name__ == "__main__":
+    import os
+    import sys
+    import threading
+    import webbrowser
+
     import uvicorn
+
+    # Support auto-opening client browser via --open-browser or VIBE_OPEN_BROWSER=1
+    if "--open-browser" in sys.argv or os.getenv("VIBE_OPEN_BROWSER", "").lower() in ("1", "true"):
+        url = f"http://{settings.server.host}:{settings.server.port}"
+        threading.Timer(1.2, lambda: webbrowser.open(url)).start()
 
     uvicorn.run(
         "vibe.api.main:app",

@@ -11,8 +11,8 @@ SUCCEEDED, FAILED and CANCELLED are terminal.
 
 from __future__ import annotations
 
-from vibe.domain.enums import TaskStatus, TaskTrigger
-from vibe.domain.errors import IllegalTransitionError
+from app.domain.enums import TaskStatus, TaskTrigger
+from app.domain.errors import IllegalTransitionError
 
 _S = TaskStatus
 _T = TaskTrigger

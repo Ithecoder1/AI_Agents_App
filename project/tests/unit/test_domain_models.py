@@ -1,10 +1,8 @@
 from __future__ import annotations
 
 import pytest
-
-from tests.factories import make_config, make_prompt, make_task
-from vibe.domain.enums import EventType, TaskStatus, TaskTrigger
-from vibe.domain.errors import (
+from app.domain.enums import EventType, TaskStatus, TaskTrigger
+from app.domain.errors import (
     AuthenticationError,
     BudgetExceededError,
     ContentRejectedError,
@@ -19,7 +17,7 @@ from vibe.domain.errors import (
     TransientProviderError,
     ValidationError,
 )
-from vibe.domain.models import (
+from app.domain.models import (
     AgentProviderConfig,
     ExecutionParams,
     HealthStatus,
@@ -27,6 +25,8 @@ from vibe.domain.models import (
     StreamEvent,
     Usage,
 )
+
+from tests.factories import make_config, make_prompt, make_task
 
 
 # --- error taxonomy ---------------------------------------------------------- #

@@ -19,8 +19,8 @@ from typing import Any, TypeVar
 
 import yaml
 
-from vibe.application.settings import AppSettings
-from vibe.domain.errors import ConfigurationError
+from app.application.settings import AppSettings
+from app.domain.errors import ConfigurationError
 
 T = TypeVar("T")
 

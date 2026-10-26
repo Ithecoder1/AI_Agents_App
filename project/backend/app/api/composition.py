@@ -6,24 +6,24 @@ import logging
 from collections.abc import Mapping
 from pathlib import Path
 
-from vibe.application.registry import ProviderRegistry, ProviderState
-from vibe.application.settings import AppSettings
-from vibe.application.workspace_manager import WorkspaceManager
-from vibe.domain.ports.agent_provider import ProviderDeps
-from vibe.infrastructure.config import (
+from app.application.registry import ProviderRegistry, ProviderState
+from app.application.settings import AppSettings
+from app.application.workspace_manager import WorkspaceManager
+from app.domain.ports.agent_provider import ProviderDeps
+from app.infrastructure.config import (
     EnvSecretResolver,
     load_environment,
     load_provider_configs,
     load_settings,
 )
-from vibe.infrastructure.workspace import YamlManifestParser
+from app.infrastructure.workspace import YamlManifestParser
 
 _log = logging.getLogger(__name__)
 
 
 def repo_root() -> Path:
-    """``<project>/`` -- this file is ``<project>/backend/app/vibe/api/composition.py``."""
-    return Path(__file__).resolve().parents[4]
+    """``<project>/`` -- this file is ``<project>/backend/app/api/composition.py``."""
+    return Path(__file__).resolve().parents[3]
 
 
 def build_registry(

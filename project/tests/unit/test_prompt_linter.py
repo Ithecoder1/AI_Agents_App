@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+from app.application.prompt_linter import Severity, estimate_tokens, lint_prompt
+
 from tests.factories import make_prompt
-from vibe.application.prompt_linter import Severity, estimate_tokens, lint_prompt
 
 GOOD_SYSTEM = (
     "You are a senior Python reviewer. Do not modify files outside the given module. "

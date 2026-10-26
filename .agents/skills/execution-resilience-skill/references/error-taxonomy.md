@@ -1,6 +1,6 @@
 # Vibe Forge Error Taxonomy & Recovery Decision Matrix
 
-Every provider adapter translates native errors into strongly typed subclasses of `ProviderError` (`vibe.domain.errors`). The resilience layer inspects two class-level flags to make automated routing decisions:
+Every provider adapter translates native errors into strongly typed subclasses of `ProviderError` (`app.domain.errors`). The resilience layer inspects two class-level flags to make automated routing decisions:
 
 - `retryable: bool` — safe to retry the *same* provider using exponential backoff with jitter.
 - `fallback_eligible: bool` — after retries are exhausted (or immediately if `retryable=False`), safe to route the task to the next provider in `ExecutionParams.fallback_provider_ids`.

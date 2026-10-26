@@ -103,7 +103,7 @@ backend\.venv\Scripts\ruff.exe check .
 backend\.venv\Scripts\ruff.exe format --check .
 
 # Strict type checker
-backend\.venv\Scripts\mypy.exe --config-file backend/app/pyproject.toml backend/app/vibe
+backend\.venv\Scripts\mypy.exe --config-file backend/app/pyproject.toml backend/app
 backend\.venv\Scripts\mypy.exe --config-file backend/providers/pyproject.toml backend/providers
 ```
 

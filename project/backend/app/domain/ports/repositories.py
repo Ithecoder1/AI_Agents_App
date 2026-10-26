@@ -3,8 +3,8 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Protocol
 
-from vibe.domain.enums import TaskStatus
-from vibe.domain.models import ExecutionTask, Prompt
+from app.domain.enums import TaskStatus
+from app.domain.models import ExecutionTask, Prompt
 
 
 class TaskRepository(Protocol):

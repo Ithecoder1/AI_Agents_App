@@ -15,12 +15,12 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from vibe.api.composition import default_registry, default_workspace_manager, repo_root
-from vibe.application.prompt_linter import lint_prompt
-from vibe.application.registry import ProviderState
-from vibe.domain.enums import EventType
-from vibe.domain.errors import ProviderError, ValidationError
-from vibe.domain.models import ExecutionParams, ExecutionTask, Prompt
+from app.api.composition import default_registry, default_workspace_manager, repo_root
+from app.application.prompt_linter import lint_prompt
+from app.application.registry import ProviderState
+from app.domain.enums import EventType
+from app.domain.errors import ProviderError, ValidationError
+from app.domain.models import ExecutionParams, ExecutionTask, Prompt
 
 # Initialize registry, settings, and workspace manager
 registry, settings = default_registry()
@@ -328,7 +328,7 @@ if __name__ == "__main__":
         threading.Timer(1.2, lambda: webbrowser.open(url)).start()
 
     uvicorn.run(
-        "vibe.api.main:app",
+        "app.api.main:app",
         host=settings.server.host,
         port=settings.server.port,
         reload=True,

@@ -23,8 +23,8 @@ backend_dir = repo_root / "project" / "backend" / "app"
 if str(backend_dir) not in sys.path:
     sys.path.insert(0, str(backend_dir))
 
-from vibe.application.prompt_linter import lint_prompt
-from vibe.domain.models import Prompt
+from app.application.prompt_linter import lint_prompt
+from app.domain.models import Prompt
 
 
 def main(argv: list[str] | None = None) -> int:

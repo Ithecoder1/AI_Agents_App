@@ -14,9 +14,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from vibe.domain import prompt_template, state_machine
-from vibe.domain.enums import ArtifactKind, EventType, TaskStatus, TaskTrigger
-from vibe.domain.errors import ErrorInfo, ValidationError
+from app.domain import prompt_template, state_machine
+from app.domain.enums import ArtifactKind, EventType, TaskStatus, TaskTrigger
+from app.domain.errors import ErrorInfo, ValidationError
 
 ParamValue = str | int | float | bool | None
 
@@ -359,7 +359,7 @@ class AgentProviderConfig:
     kind: str
     display_name: str = ""
     # "package.module:Callable" -- a class or function ``(config, deps) -> IAgentProvider``.
-    # If omitted, resolved through the ``vibe.providers`` entry-point group by ``kind``.
+    # If omitted, resolved through the ``app.providers`` entry-point group by ``kind``.
     adapter: str | None = None
     enabled: bool = True
     max_concurrency: int = 4

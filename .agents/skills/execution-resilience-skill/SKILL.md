@@ -14,7 +14,7 @@ This skill defines the operational policies and design principles ensuring robus
 ## Core Resilience Pillars
 
 ### 1. Strongly-Typed Error Routing
-Never parse error message strings. All provider adapters map native exceptions to subclasses of `ProviderError` (`vibe.domain.errors`). The resilience layer checks the class-level properties:
+Never parse error message strings. All provider adapters map native exceptions to subclasses of `ProviderError` (`app.domain.errors`). The resilience layer checks the class-level properties:
 - `retryable`: dictates whether exponential backoff is triggered.
 - `fallback_eligible`: dictates whether the task shifts to the next provider in `ExecutionParams.fallback_provider_ids`.
 

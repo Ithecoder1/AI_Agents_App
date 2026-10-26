@@ -10,8 +10,7 @@ import json
 from collections.abc import Mapping
 
 import httpx
-
-from vibe.domain.errors import (
+from app.domain.errors import (
     AuthenticationError,
     BudgetExceededError,
     InvalidRequestError,

@@ -7,8 +7,6 @@ name = "vibe-forge"
 version = "0.1.0"
 description = "Vibe Forge application: prompt authoring + pluggable agent execution engine (LLM providers live in vibe-forge-providers)."
 requires-python = ">=3.10"
-# Core runtime deps only. FastAPI/SQLAlchemy/httpx may ONLY be imported from
-# vibe.infrastructure / vibe.api (see contracts below).
 dependencies = [
     "PyYAML>=6.0",
     "jsonschema>=4.18",
@@ -30,8 +28,23 @@ dev = [
     "httpx>=0.27.0",
 ]
 
-[tool.setuptools.packages.find]
-include = ["vibe*"]
+[tool.setuptools]
+packages = [
+    "app",
+    "app.api",
+    "app.application",
+    "app.domain",
+    "app.domain.ports",
+    "app.infrastructure",
+    "app.infrastructure.artifacts",
+    "app.infrastructure.config",
+    "app.infrastructure.eventing",
+    "app.infrastructure.persistence",
+    "app.infrastructure.workspace",
+]
+
+[tool.setuptools.package-dir]
+app = "."
 
 # --------------------------------------------------------------------------- #
 # Tooling  (ruff + pytest config live in <project>/ruff.toml and <project>/pytest.ini)
@@ -46,23 +59,23 @@ warn_unreachable = true
 #   api -> infrastructure -> application -> domain      (dependencies point inward only)
 # --------------------------------------------------------------------------- #
 [tool.importlinter]
-root_package = "vibe"
+root_package = "app"
 include_external_packages = true
 
 [[tool.importlinter.contracts]]
 name = "Layered architecture (api > infrastructure > application > domain)"
 type = "layers"
 layers = [
-    "vibe.api",
-    "vibe.infrastructure",
-    "vibe.application",
-    "vibe.domain",
+    "app.api",
+    "app.infrastructure",
+    "app.application",
+    "app.domain",
 ]
 
 [[tool.importlinter.contracts]]
 name = "Domain is pure (stdlib only)"
 type = "forbidden"
-source_modules = ["vibe.domain"]
+source_modules = ["app.domain"]
 forbidden_modules = [
     "yaml", "jsonschema", "dotenv", "pydantic", "fastapi", "starlette", "httpx",
     "sqlalchemy", "aiosqlite", "alembic", "requests", "aiohttp",
@@ -71,7 +84,7 @@ forbidden_modules = [
 [[tool.importlinter.contracts]]
 name = "Application layer is framework- and IO-free"
 type = "forbidden"
-source_modules = ["vibe.application"]
+source_modules = ["app.application"]
 forbidden_modules = [
     "yaml", "jsonschema", "dotenv", "pydantic", "fastapi", "starlette", "httpx",
     "sqlalchemy", "aiosqlite", "alembic", "requests", "aiohttp",
@@ -82,5 +95,5 @@ forbidden_modules = [
 [[tool.importlinter.contracts]]
 name = "App never imports LLM providers"
 type = "forbidden"
-source_modules = ["vibe"]
-forbidden_modules = ["vibe_providers"]
+source_modules = ["app"]
+forbidden_modules = ["providers"]

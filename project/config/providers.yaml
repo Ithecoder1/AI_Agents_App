@@ -6,7 +6,7 @@ providers:
   - id: fake
     kind: fake
     display_name: Fake (offline demo)
-    adapter: vibe_providers.adapters.fake:FakeProvider
+    adapter: providers.adapters.fake:FakeProvider
     enabled: true
     options:
       delay_ms: 40
@@ -18,7 +18,7 @@ providers:
   - id: openrouter-default
     kind: openrouter
     display_name: OpenRouter
-    adapter: vibe_providers.adapters.openrouter:OpenRouterProvider
+    adapter: providers.adapters.openrouter:OpenRouterProvider
     enabled: false
     max_concurrency: 4
     options:
@@ -29,7 +29,7 @@ providers:
   - id: gemini-default
     kind: gemini
     display_name: Google Gemini
-    adapter: vibe_providers.adapters.gemini:GeminiProvider
+    adapter: providers.adapters.gemini:GeminiProvider
     enabled: true
     max_concurrency: 4
     options:
@@ -40,7 +40,7 @@ providers:
   - id: anthropic-default
     kind: anthropic
     display_name: Anthropic Claude
-    adapter: vibe_providers.adapters.anthropic:AnthropicProvider
+    adapter: providers.adapters.anthropic:AnthropicProvider
     enabled: false
     max_concurrency: 4
     options:
@@ -51,7 +51,7 @@ providers:
   - id: antigravity-headless
     kind: antigravity
     display_name: Antigravity (headless)
-    adapter: vibe_providers.adapters.antigravity:AntigravityProvider
+    adapter: providers.adapters.antigravity:AntigravityProvider
     enabled: false
     max_concurrency: 1
     options:

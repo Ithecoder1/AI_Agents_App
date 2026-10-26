@@ -7,8 +7,8 @@ from typing import Any
 
 import yaml
 
-from vibe.domain.errors import ConfigurationError
-from vibe.domain.models import ProjectManifest
+from app.domain.errors import ConfigurationError
+from app.domain.models import ProjectManifest
 
 _MANIFEST_FILENAMES = (
     ".vibe/manifest.yaml",

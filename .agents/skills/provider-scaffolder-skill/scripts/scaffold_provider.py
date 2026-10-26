@@ -2,7 +2,7 @@
 """Scaffold a new agent provider WITHOUT touching any existing provider or core code.
 
 Creates exactly:
-  backend/providers/vibe_providers/adapters/<name>/{__init__,adapter,mapping,errors}.py
+  backend/providers/providers/adapters/<name>/{__init__,adapter,mapping,errors}.py
   tests/providers/test_<name>.py
 and APPENDS one (disabled) entry to config/providers.yaml.
 
@@ -61,7 +61,7 @@ def scaffold(
     if not re.match(r"^[A-Z][A-Za-z0-9]*$", class_name):
         raise ScaffoldError(f"--class-name must be CamelCase (got {class_name!r})")
 
-    package_dir = repo_root / "backend" / "providers" / "vibe_providers" / "adapters" / name
+    package_dir = repo_root / "backend" / "providers" / "providers" / "adapters" / name
     test_file = repo_root / "tests" / "providers" / f"test_{name}.py"
     config_file = repo_root / "config" / "providers.yaml"
 

@@ -1,7 +1,7 @@
 """Workspace infrastructure: manifest persistence and sandboxed tools."""
 
-from vibe.infrastructure.workspace.manifest_parser import YamlManifestParser
-from vibe.infrastructure.workspace.tools import (
+from app.infrastructure.workspace.manifest_parser import YamlManifestParser
+from app.infrastructure.workspace.tools import (
     safe_git_diff,
     safe_read_file,
     safe_run_command,

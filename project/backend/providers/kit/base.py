@@ -11,9 +11,9 @@ from abc import ABC, abstractmethod
 from collections.abc import AsyncIterator
 from typing import Any, ClassVar
 
-from vibe.domain.enums import EventType, TaskStatus
-from vibe.domain.errors import StreamDisconnectedError
-from vibe.domain.models import (
+from app.domain.enums import EventType, TaskStatus
+from app.domain.errors import StreamDisconnectedError
+from app.domain.models import (
     AgentProviderConfig,
     Artifact,
     ExecutionResult,
@@ -23,7 +23,7 @@ from vibe.domain.models import (
     StreamEvent,
     Usage,
 )
-from vibe.domain.ports.agent_provider import ProviderDeps
+from app.domain.ports.agent_provider import ProviderDeps
 
 
 async def fold_events(

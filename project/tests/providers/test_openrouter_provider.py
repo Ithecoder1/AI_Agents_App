@@ -4,19 +4,19 @@ import json
 
 import httpx
 import pytest
-
-from tests.contract.provider_contract import ProviderContractTests
-from tests.factories import make_config, make_deps, running_task
-from tests.providers.http_fixtures import slow_transport, sse, stream_transport
-from vibe.domain.enums import EventType
-from vibe.domain.errors import (
+from app.domain.enums import EventType
+from app.domain.errors import (
     AuthenticationError,
     InvalidRequestError,
     RateLimitedError,
     StreamDisconnectedError,
 )
-from vibe.domain.ports.agent_provider import IAgentProvider
-from vibe_providers.adapters.openrouter import OpenRouterProvider
+from app.domain.ports.agent_provider import IAgentProvider
+from providers.adapters.openrouter import OpenRouterProvider
+
+from tests.contract.provider_contract import ProviderContractTests
+from tests.factories import make_config, make_deps, running_task
+from tests.providers.http_fixtures import slow_transport, sse, stream_transport
 
 
 def _chunk(**delta: object) -> dict[str, object]:

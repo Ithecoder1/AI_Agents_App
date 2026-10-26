@@ -5,16 +5,17 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
-from vibe.domain.enums import EventType
-from vibe.domain.errors import ContentRejectedError, ProviderError, TransientProviderError
-from vibe.domain.models import ExecutionTask
-from vibe_providers.kit import (
+from app.domain.enums import EventType
+from app.domain.errors import ContentRejectedError, ProviderError, TransientProviderError
+from app.domain.models import ExecutionTask
+
+from providers.kit import (
     Delta,
     HttpRequest,
     StreamState,
     error_from_status,
 )
-from vibe_providers.kit.params import resolve_param
+from providers.kit.params import resolve_param
 
 
 def build_request(task: ExecutionTask, model: str, options: Mapping[str, Any]) -> HttpRequest:

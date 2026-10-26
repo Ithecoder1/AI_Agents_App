@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from vibe.domain.errors import InvalidRequestError, ValidationError
-from vibe.domain.models import ExecutionTask
+from app.domain.errors import InvalidRequestError, ValidationError
+from app.domain.models import ExecutionTask
 
 
 def build_request(task: ExecutionTask) -> dict[str, Any]:

@@ -12,7 +12,7 @@ from collections import Counter
 from dataclasses import dataclass, field
 from enum import Enum
 
-from vibe.domain.models import Prompt
+from app.domain.models import Prompt
 
 
 class Severity(str, Enum):

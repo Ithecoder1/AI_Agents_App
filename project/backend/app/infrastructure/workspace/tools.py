@@ -5,8 +5,8 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
-from vibe.domain.errors import ValidationError
-from vibe.domain.models import WorkspaceContext
+from app.domain.errors import ValidationError
+from app.domain.models import WorkspaceContext
 
 
 def safe_read_file(workspace: WorkspaceContext, rel_path: str | Path) -> str:

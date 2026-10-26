@@ -2,7 +2,7 @@
 
 Resolves the target infrastructure from runtime configuration. Adding a provider never
 requires touching this file: the adapter is located through (1) the config's ``adapter``
-import path (``"package.module:Callable"``) or (2) the ``vibe.providers`` entry-point
+import path (``"package.module:Callable"``) or (2) the ``app.providers`` entry-point
 group, keyed by ``kind``. Import paths come from operator-controlled config and are
 therefore trusted; never build them from request data.
 
@@ -22,15 +22,15 @@ from enum import Enum
 from importlib import metadata
 from typing import Any
 
-from vibe.domain.errors import (
+from app.domain.errors import (
     ConfigurationError,
     ProviderNotFoundError,
     ProviderUnavailableError,
 )
-from vibe.domain.models import AgentProviderConfig, HealthStatus
-from vibe.domain.ports.agent_provider import IAgentProvider, ProviderDeps, ProviderFactory
+from app.domain.models import AgentProviderConfig, HealthStatus
+from app.domain.ports.agent_provider import IAgentProvider, ProviderDeps, ProviderFactory
 
-ENTRY_POINT_GROUP = "vibe.providers"
+ENTRY_POINT_GROUP = "app.providers"
 
 _log = logging.getLogger(__name__)
 

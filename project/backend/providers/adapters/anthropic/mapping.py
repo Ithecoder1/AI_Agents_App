@@ -5,8 +5,8 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
-from vibe.domain.enums import EventType
-from vibe.domain.errors import (
+from app.domain.enums import EventType
+from app.domain.errors import (
     AuthenticationError,
     ContentRejectedError,
     InvalidRequestError,
@@ -15,9 +15,10 @@ from vibe.domain.errors import (
     TransientProviderError,
     ValidationError,
 )
-from vibe.domain.models import ExecutionTask
-from vibe_providers.kit import Delta, HttpRequest, StreamState
-from vibe_providers.kit.params import resolve_int_param
+from app.domain.models import ExecutionTask
+
+from providers.kit import Delta, HttpRequest, StreamState
+from providers.kit.params import resolve_int_param
 
 DEFAULT_MAX_TOKENS = 8192
 MIN_THINKING_BUDGET = 1024

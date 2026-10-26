@@ -4,7 +4,7 @@ from collections.abc import AsyncIterator, Sequence
 from contextlib import AbstractAsyncContextManager
 from typing import Protocol
 
-from vibe.domain.models import StreamEvent
+from app.domain.models import StreamEvent
 
 
 class EventStore(Protocol):

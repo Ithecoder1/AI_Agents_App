@@ -28,6 +28,6 @@ resilience:
   total_timeout_s: 900.0
 
 storage:
-  db_url: sqlite+aiosqlite:///./data/vibe.db
+  db_url: sqlite+aiosqlite:///./data/app.db
   artifacts_dir: data/artifacts
   retention_days: 30

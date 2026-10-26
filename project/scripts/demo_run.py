@@ -17,9 +17,9 @@ for package_dir in (repo_root / "backend" / "app", repo_root / "backend" / "prov
     if str(package_dir) not in sys.path:
         sys.path.insert(0, str(package_dir))
 
-from vibe.api.composition import default_registry
-from vibe.domain.enums import EventType
-from vibe.domain.models import ExecutionParams, ExecutionTask, Prompt
+from app.api.composition import default_registry
+from app.domain.enums import EventType
+from app.domain.models import ExecutionParams, ExecutionTask, Prompt
 
 
 async def main() -> None:

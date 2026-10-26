@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Protocol, runtime_checkable
 
-from vibe.domain.models import ProjectManifest
+from app.domain.models import ProjectManifest
 
 
 @runtime_checkable

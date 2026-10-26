@@ -4,19 +4,18 @@ import tempfile
 from pathlib import Path
 
 import pytest
-from starlette.testclient import TestClient
-
-from vibe.api.main import app
-from vibe.application.workspace_manager import WorkspaceManager
-from vibe.domain.errors import ValidationError
-from vibe.domain.models import ProjectManifest, WorkspaceContext
-from vibe.infrastructure.workspace import (
+from app.api.main import app
+from app.application.workspace_manager import WorkspaceManager
+from app.domain.errors import ValidationError
+from app.domain.models import ProjectManifest, WorkspaceContext
+from app.infrastructure.workspace import (
     YamlManifestParser,
     safe_git_diff,
     safe_read_file,
     safe_run_command,
     safe_write_file,
 )
+from starlette.testclient import TestClient
 
 
 @pytest.fixture

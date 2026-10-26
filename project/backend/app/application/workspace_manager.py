@@ -7,9 +7,9 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
-from vibe.domain.errors import ValidationError
-from vibe.domain.models import ProjectManifest, WorkspaceContext
-from vibe.domain.ports.workspace import IManifestParser
+from app.domain.errors import ValidationError
+from app.domain.models import ProjectManifest, WorkspaceContext
+from app.domain.ports.workspace import IManifestParser
 
 _IGNORED_DIRS = {
     ".git",

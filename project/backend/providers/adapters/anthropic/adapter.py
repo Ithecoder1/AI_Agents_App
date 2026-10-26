@@ -5,9 +5,10 @@ from __future__ import annotations
 from collections.abc import Iterable, Mapping
 from typing import Any
 
-from vibe.domain.models import ExecutionTask, ProviderCapabilities
-from vibe_providers.adapters.anthropic import mapping
-from vibe_providers.kit import Delta, HttpRequest, HttpStreamingRunner, StreamState
+from app.domain.models import ExecutionTask, ProviderCapabilities
+
+from providers.adapters.anthropic import mapping
+from providers.kit import Delta, HttpRequest, HttpStreamingRunner, StreamState
 
 ANTHROPIC_VERSION = "2023-06-01"
 

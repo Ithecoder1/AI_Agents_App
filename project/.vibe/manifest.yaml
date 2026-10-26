@@ -2,7 +2,7 @@ name: vibe-forge
 version: 0.1.0
 description: Autonomous Meta-Agent Studio & Multi-Workspace Vibe Coding Engine
 runtime: "python:3.10"
-entrypoint: backend/app/vibe/api/main.py
+entrypoint: backend/app/api/main.py
 test_command: backend/.venv/Scripts/python.exe -m pytest backend/tests
 context_files:
   - README.md

@@ -1,18 +1,18 @@
 from __future__ import annotations
 
 import pytest
-
-from tests.contract.provider_contract import ProviderContractTests
-from tests.factories import make_config, make_deps, running_task
-from vibe.domain.enums import ArtifactKind, EventType, TaskTrigger
-from vibe.domain.errors import (
+from app.domain.enums import ArtifactKind, EventType, TaskTrigger
+from app.domain.errors import (
     ConfigurationError,
     InvalidRequestError,
     RateLimitedError,
     StreamDisconnectedError,
 )
-from vibe.domain.ports.agent_provider import IAgentProvider
-from vibe_providers.adapters.fake import FakeProvider
+from app.domain.ports.agent_provider import IAgentProvider
+from providers.adapters.fake import FakeProvider
+
+from tests.contract.provider_contract import ProviderContractTests
+from tests.factories import make_config, make_deps, running_task
 
 
 def _fake(**options: object) -> FakeProvider:
@@ -55,7 +55,7 @@ async def test_mid_stream_failure_emits_partial_tokens_first() -> None:
 
 
 async def test_retry_attempt_succeeds_after_scripted_failures() -> None:
-    from vibe.domain.enums import TaskTrigger
+    from app.domain.enums import TaskTrigger
 
     provider = _fake(fail_first_n=1, chunks=["ok"])
     first = running_task()

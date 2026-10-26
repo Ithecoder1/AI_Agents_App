@@ -42,7 +42,7 @@ class ResilienceSettings:
 
 @dataclass(frozen=True)
 class StorageSettings:
-    db_url: str = "sqlite+aiosqlite:///./data/vibe.db"
+    db_url: str = "sqlite+aiosqlite:///./data/app.db"
     artifacts_dir: str = "data/artifacts"
     retention_days: int = 30
 

@@ -6,13 +6,13 @@ Welcome to **Vibe Forge**, a multi-provider vibe-coding web application and exec
 
 This project follows **Hexagonal / Clean Architecture**. Adding a new agent provider or execution runner requires **zero modifications** to core domain, application logic, or UI layers.
 
-1. **Pure Domain (`project/backend/app/vibe/domain`)**: Data models, state machine, typed errors, and ports. Stdlib only.
-2. **Application (`project/backend/app/vibe/application`)**: `ProviderRegistry`, `PromptLinter`, `AppSettings`, execution coordination. No direct I/O.
-3. **App Infrastructure (`project/backend/app/vibe/infrastructure`)**: `config/` (YAML/env loader with failure isolation and `${VAR}` interpolation), `workspace/`, persistence, eventing.
-4. **LLM Providers (`project/backend/providers/vibe_providers`)** - a separate package, depends only on `vibe.domain`; the app never imports it:
+1. **Pure Domain (`project/backend/app/domain`)**: Data models, state machine, typed errors, and ports. Stdlib only.
+2. **Application (`project/backend/app/application`)**: `ProviderRegistry`, `PromptLinter`, `AppSettings`, execution coordination. No direct I/O.
+3. **App Infrastructure (`project/backend/app/infrastructure`)**: `config/` (YAML/env loader with failure isolation and `${VAR}` interpolation), `workspace/`, persistence, eventing.
+4. **LLM Providers (`project/backend/providers/providers`)** - a separate package, depends only on `app.domain`; the app never imports it:
    - `kit/`: `BaseAgentRunner` template-method class and HTTP streaming runner.
    - `adapters/<name>/`: Isolated adapters (OpenRouter, Gemini, Anthropic, Antigravity, custom packages, Fake).
-5. **Presentation (`project/backend/app/vibe/api` & `project/web`)**: FastAPI REST/WebSocket endpoints and React/Vite UI.
+5. **Presentation (`project/backend/app/api` & `project/web`)**: FastAPI REST/WebSocket endpoints and React/Vite UI.
 
 ## 🛠️ Workspace Skills & Tools
 
@@ -44,6 +44,6 @@ project\backend\.venv\Scripts\ruff.exe check project
 project\backend\.venv\Scripts\ruff.exe format --check project
 
 # 4. Strict type checker
-project\backend\.venv\Scripts\mypy.exe --config-file project/backend/app/pyproject.toml project/backend/app/vibe
-project\backend\.venv\Scripts\mypy.exe --config-file project/backend/providers/pyproject.toml project/backend/providers/vibe_providers
+project\backend\.venv\Scripts\mypy.exe --config-file project/backend/app/pyproject.toml project/backend/app
+project\backend\.venv\Scripts\mypy.exe --config-file project/backend/providers/pyproject.toml project/backend/providers/providers
 ```

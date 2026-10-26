@@ -5,8 +5,8 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
-from vibe.domain.errors import ValidationError
-from vibe.domain.models import ExecutionTask
+from app.domain.errors import ValidationError
+from app.domain.models import ExecutionTask
 
 
 def resolve_param(task: ExecutionTask, options: Mapping[str, Any], key: str) -> Any:

@@ -3,19 +3,19 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-
-from tests.factories import REPO_CONFIG, REPO_ROOT, running_task
-from vibe.api.composition import build_registry
-from vibe.application.registry import ProviderState
-from vibe.application.settings import AppSettings
-from vibe.domain.errors import ConfigurationError
-from vibe.infrastructure.config import (
+from app.api.composition import build_registry
+from app.application.registry import ProviderState
+from app.application.settings import AppSettings
+from app.domain.errors import ConfigurationError
+from app.infrastructure.config import (
     EnvSecretResolver,
     interpolate,
     load_environment,
     load_provider_configs,
     load_settings,
 )
+
+from tests.factories import REPO_CONFIG, REPO_ROOT, running_task
 
 SCHEMA = REPO_CONFIG / "providers.schema.json"
 

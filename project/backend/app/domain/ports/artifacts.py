@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Protocol
 
-from vibe.domain.models import Artifact
+from app.domain.models import Artifact
 
 
 class ArtifactStore(Protocol):

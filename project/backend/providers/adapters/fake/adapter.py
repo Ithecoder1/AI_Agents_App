@@ -21,8 +21,8 @@ import asyncio
 import contextlib
 from collections.abc import AsyncIterator
 
-from vibe.domain.enums import ArtifactKind, EventType
-from vibe.domain.errors import (
+from app.domain.enums import ArtifactKind, EventType
+from app.domain.errors import (
     AuthenticationError,
     BudgetExceededError,
     ConfigurationError,
@@ -37,7 +37,7 @@ from vibe.domain.errors import (
     TransientProviderError,
     ValidationError,
 )
-from vibe.domain.models import (
+from app.domain.models import (
     AgentProviderConfig,
     Artifact,
     ExecutionTask,
@@ -46,8 +46,9 @@ from vibe.domain.models import (
     StreamEvent,
     Usage,
 )
-from vibe.domain.ports.agent_provider import ProviderDeps
-from vibe_providers.kit import BaseAgentRunner
+from app.domain.ports.agent_provider import ProviderDeps
+
+from providers.kit import BaseAgentRunner
 
 _ERRORS: dict[str, type[ProviderError]] = {
     "rate_limited": RateLimitedError,

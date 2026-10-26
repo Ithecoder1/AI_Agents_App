@@ -6,7 +6,7 @@ import re
 from collections.abc import Mapping
 from typing import Any
 
-from vibe.domain.errors import ConfigurationError
+from app.domain.errors import ConfigurationError
 
 _PATTERN = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-(.*?))?\}")
 

@@ -5,14 +5,14 @@ from typing import Any
 
 import httpx
 import pytest
+from app.domain.enums import EventType
+from app.domain.errors import ContentRejectedError, InvalidRequestError, TransientProviderError
+from app.domain.ports.agent_provider import IAgentProvider
+from providers.adapters.anthropic import AnthropicProvider
 
 from tests.contract.provider_contract import ProviderContractTests
 from tests.factories import make_config, make_deps, running_task
 from tests.providers.http_fixtures import slow_transport, sse, stream_transport
-from vibe.domain.enums import EventType
-from vibe.domain.errors import ContentRejectedError, InvalidRequestError, TransientProviderError
-from vibe.domain.ports.agent_provider import IAgentProvider
-from vibe_providers.adapters.anthropic import AnthropicProvider
 
 _EVENTS: list[dict[str, Any]] = [
     {"type": "message_start", "message": {"usage": {"input_tokens": 11, "output_tokens": 1}}},

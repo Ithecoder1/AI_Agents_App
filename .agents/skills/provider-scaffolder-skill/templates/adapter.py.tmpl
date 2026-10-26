@@ -15,11 +15,11 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator
 
-from vibe.domain.enums import EventType
-from vibe.domain.models import ExecutionTask, HealthStatus, ProviderCapabilities, StreamEvent
-from vibe_providers.adapters.$name.errors import translate_error
-from vibe_providers.adapters.$name.mapping import build_request
-from vibe_providers.kit import BaseAgentRunner
+from app.domain.enums import EventType
+from app.domain.models import ExecutionTask, HealthStatus, ProviderCapabilities, StreamEvent
+from providers.adapters.$name.errors import translate_error
+from providers.adapters.$name.mapping import build_request
+from providers.kit import BaseAgentRunner
 
 
 class $class_name(BaseAgentRunner):

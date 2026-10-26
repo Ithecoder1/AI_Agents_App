@@ -16,12 +16,12 @@ import asyncio
 import json
 
 import pytest
+from app.domain.enums import EventType, TaskStatus
+from app.domain.errors import ExecutionCancelledError
+from app.domain.models import ExecutionResult, HealthStatus, ProviderCapabilities
+from app.domain.ports.agent_provider import IAgentProvider
 
 from tests.factories import running_task
-from vibe.domain.enums import EventType, TaskStatus
-from vibe.domain.errors import ExecutionCancelledError
-from vibe.domain.models import ExecutionResult, HealthStatus, ProviderCapabilities
-from vibe.domain.ports.agent_provider import IAgentProvider
 
 SECRET = "sk-test-SUPER-secret-1234567890"
 

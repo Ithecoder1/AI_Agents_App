@@ -6,14 +6,14 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
-from vibe.domain.models import (
+from app.domain.models import (
     AgentProviderConfig,
     ExecutionParams,
     ExecutionTask,
     Prompt,
 )
-from vibe.domain.ports.agent_provider import ProviderDeps
-from vibe.infrastructure.config import EnvSecretResolver
+from app.domain.ports.agent_provider import ProviderDeps
+from app.infrastructure.config import EnvSecretResolver
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 REPO_CONFIG = REPO_ROOT / "config"

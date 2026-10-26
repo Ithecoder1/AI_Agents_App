@@ -1,9 +1,8 @@
 from __future__ import annotations
 
 import pytest
+from app.api.main import app
 from starlette.testclient import TestClient
-
-from vibe.api.main import app
 
 
 @pytest.fixture

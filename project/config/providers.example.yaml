@@ -6,7 +6,7 @@ providers:
   # with signature (config: AgentProviderConfig, deps: ProviderDeps) -> IAgentProvider.
   - id: crewai-research
     kind: package
-    adapter: vibe_providers.adapters.package_runner:PackageRunnerProvider
+    adapter: providers.adapters.package_runner:PackageRunnerProvider
     options:
       mode: inprocess              # inprocess | subprocess
       entrypoint: my_pkg.crew:run_stream
@@ -14,14 +14,14 @@ providers:
       idempotent: false
 
   # Pip-installed third-party package that registered an entry point in group
-  # "vibe.providers": omit `adapter`, set `kind` to the entry-point name.
+  # "app.providers": omit `adapter`, set `kind` to the entry-point name.
   - id: from-entry-point
     kind: my-plugin-kind
     options: {}
 
   - id: openrouter-routed
     kind: openrouter
-    adapter: vibe_providers.adapters.openrouter:OpenRouterProvider
+    adapter: providers.adapters.openrouter:OpenRouterProvider
     options:
       base_url: https://openrouter.ai/api/v1
       default_model: anthropic/claude-sonnet-4
@@ -31,7 +31,7 @@ providers:
   # Resilience testing: first two attempts fail with a rate limit, then succeed.
   - id: fake-flaky
     kind: fake
-    adapter: vibe_providers.adapters.fake:FakeProvider
+    adapter: providers.adapters.fake:FakeProvider
     options:
       fail_first_n: 2
       fail_error: rate_limited

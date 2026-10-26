@@ -3,10 +3,9 @@ from __future__ import annotations
 import itertools
 
 import pytest
-
-from vibe.domain.enums import TaskStatus, TaskTrigger
-from vibe.domain.errors import IllegalTransitionError
-from vibe.domain.state_machine import (
+from app.domain.enums import TaskStatus, TaskTrigger
+from app.domain.errors import IllegalTransitionError
+from app.domain.state_machine import (
     TERMINAL_STATUSES,
     TRANSITIONS,
     allowed_triggers,

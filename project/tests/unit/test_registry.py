@@ -1,24 +1,24 @@
 from __future__ import annotations
 
 import pytest
-
-from tests.factories import make_config, make_deps, running_task
-from vibe.application.registry import (
+from app.application.registry import (
     ProviderRegistry,
     ProviderState,
     entry_point_lookup,
     load_factory,
 )
-from vibe.domain.errors import (
+from app.domain.errors import (
     ConfigurationError,
     ProviderNotFoundError,
     ProviderUnavailableError,
 )
-from vibe.domain.models import AgentProviderConfig, HealthStatus
-from vibe.domain.ports.agent_provider import ProviderDeps
-from vibe_providers.adapters.fake import FakeProvider
+from app.domain.models import AgentProviderConfig, HealthStatus
+from app.domain.ports.agent_provider import ProviderDeps
+from providers.adapters.fake import FakeProvider
 
-FAKE = "vibe_providers.adapters.fake:FakeProvider"
+from tests.factories import make_config, make_deps, running_task
+
+FAKE = "providers.adapters.fake:FakeProvider"
 
 
 def not_a_provider(config: AgentProviderConfig, deps: ProviderDeps) -> object:
@@ -57,7 +57,7 @@ def test_disabled_provider_is_listed_but_unavailable() -> None:
     "adapter",
     [
         "no_such_module_xyz:Thing",
-        "vibe_providers.adapters.fake:Missing",
+        "providers.adapters.fake:Missing",
         "tests.unit.test_registry:not_a_provider",  # builds, but violates the contract
         "tests.unit.test_registry:FAKE",  # not callable
     ],

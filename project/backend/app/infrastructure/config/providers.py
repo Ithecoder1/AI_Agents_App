@@ -18,9 +18,9 @@ from typing import Any
 import yaml
 from jsonschema import Draft202012Validator
 
-from vibe.domain.errors import ConfigurationError, ValidationError
-from vibe.domain.models import AgentProviderConfig
-from vibe.infrastructure.config.interpolation import interpolate
+from app.domain.errors import ConfigurationError, ValidationError
+from app.domain.models import AgentProviderConfig
+from app.infrastructure.config.interpolation import interpolate
 
 _SCHEMA_NAME = "providers.schema.json"
 

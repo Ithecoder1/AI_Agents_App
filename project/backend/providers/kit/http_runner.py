@@ -22,9 +22,8 @@ from dataclasses import dataclass, field
 from typing import Any, ClassVar
 
 import httpx
-
-from vibe.domain.enums import EventType
-from vibe.domain.errors import (
+from app.domain.enums import EventType
+from app.domain.errors import (
     AuthenticationError,
     ExecutionCancelledError,
     InvalidRequestError,
@@ -32,7 +31,7 @@ from vibe.domain.errors import (
     TransientProviderError,
     ValidationError,
 )
-from vibe.domain.models import (
+from app.domain.models import (
     AgentProviderConfig,
     ExecutionTask,
     HealthStatus,
@@ -40,15 +39,16 @@ from vibe.domain.models import (
     StreamEvent,
     Usage,
 )
-from vibe.domain.ports.agent_provider import ProviderDeps
-from vibe_providers.kit.base import BaseAgentRunner
-from vibe_providers.kit.http_errors import (
+from app.domain.ports.agent_provider import ProviderDeps
+
+from providers.kit.base import BaseAgentRunner
+from providers.kit.http_errors import (
     error_from_status,
     extract_error_message,
     parse_retry_after,
     translate_httpx_error,
 )
-from vibe_providers.kit.sse import iter_sse
+from providers.kit.sse import iter_sse
 
 #: ``(EventType.THOUGHT | EventType.TOKEN, text)``
 Delta = tuple[EventType, str]

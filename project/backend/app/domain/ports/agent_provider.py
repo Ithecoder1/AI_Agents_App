@@ -7,7 +7,7 @@ from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass, field
 from typing import Protocol, runtime_checkable
 
-from vibe.domain.models import (
+from app.domain.models import (
     AgentProviderConfig,
     ExecutionResult,
     ExecutionTask,
@@ -15,7 +15,7 @@ from vibe.domain.models import (
     ProviderCapabilities,
     StreamEvent,
 )
-from vibe.domain.ports.secrets import SecretResolver
+from app.domain.ports.secrets import SecretResolver
 
 
 @runtime_checkable
@@ -55,7 +55,7 @@ class ProviderDeps:
     """Runtime collaborators handed to every provider factory."""
 
     secrets: SecretResolver
-    logger: logging.Logger = field(default_factory=lambda: logging.getLogger("vibe.provider"))
+    logger: logging.Logger = field(default_factory=lambda: logging.getLogger("app.provider"))
 
 
 # A provider factory is any callable ``(config, deps) -> IAgentProvider``: a class whose

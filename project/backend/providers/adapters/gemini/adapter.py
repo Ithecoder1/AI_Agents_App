@@ -17,10 +17,17 @@ class GeminiProvider(HttpStreamingRunner):
         supports_cancel=True,
         idempotent=True,
         reports_usage=True,
-        models=("gemini-2.5-flash", "gemini-2.5-pro", "gemini-2.0-flash"),
+        models=(
+            "gemini-2.5-flash",
+            "gemini-2.5-pro",
+            "gemini-2.0-flash",
+            "gemini-3-flash-preview",
+            "gemini-3.1-flash-lite",
+            "gemini-3.8-flash",
+        ),
     )
     default_base_url = "https://generativelanguage.googleapis.com/v1beta"
-    default_model = "gemini-2.5-flash"
+    default_model = "gemini-3-flash-preview"
     api_key_env = "GEMINI_API_KEY"
 
     def auth_headers(self, api_key: str) -> dict[str, str]:

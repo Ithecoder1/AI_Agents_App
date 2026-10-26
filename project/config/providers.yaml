@@ -33,9 +33,9 @@ providers:
     enabled: true
     max_concurrency: 4
     options:
-      default_model: gemini-2.5-flash
+      default_model: gemini-3-flash-preview
       thinking_budget: -1        # -1 dynamic | 0 off | N tokens (omit for non-thinking models)
-      api_key: AIzaSyAGrm75XDoJeFZXPhUYnmRyTHpBnKbmJ4E
+      api_key: ${GEMINI_API_KEY}
 
   - id: anthropic-default
     kind: anthropic

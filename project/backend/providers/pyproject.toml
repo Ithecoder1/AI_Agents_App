@@ -1,0 +1,68 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "vibe-forge-providers"
+version = "0.1.0"
+description = "Vibe Forge LLM / agent providers: provider kit and adapters (fake, OpenRouter, Gemini, Anthropic, Antigravity, package runner)."
+requires-python = ">=3.10"
+dependencies = [
+    "vibe-forge>=0.1.0",
+    "httpx>=0.27.0",
+]
+
+# Third-party packages self-register providers the same way (group "vibe.providers").
+# Resolution order in ProviderRegistry: config `adapter` import path -> entry point by `kind`.
+[project.entry-points."vibe.providers"]
+fake = "vibe_providers.adapters.fake:FakeProvider"
+openrouter = "vibe_providers.adapters.openrouter:OpenRouterProvider"
+gemini = "vibe_providers.adapters.gemini:GeminiProvider"
+anthropic = "vibe_providers.adapters.anthropic:AnthropicProvider"
+
+[tool.setuptools.packages.find]
+include = ["vibe_providers*"]
+
+# --------------------------------------------------------------------------- #
+# Tooling  (ruff + pytest config live in <project>/ruff.toml and <project>/pytest.ini)
+# --------------------------------------------------------------------------- #
+[tool.mypy]
+python_version = "3.10"
+strict = true
+# vibe (the app package) is a sibling checkout; resolve it from source for type checking.
+mypy_path = "$MYPY_CONFIG_FILE_DIR/../app"
+warn_unreachable = true
+
+# --------------------------------------------------------------------------- #
+# Architecture contracts  (run: `lint-imports --config backend/providers/pyproject.toml`)
+#   adapters -> kit -> vibe.domain      (providers only ever depend on the domain)
+# --------------------------------------------------------------------------- #
+[tool.importlinter]
+root_packages = ["vibe_providers", "vibe"]
+
+[[tool.importlinter.contracts]]
+name = "Adapters build on the kit, never the reverse"
+type = "layers"
+layers = [
+    "vibe_providers.adapters",
+    "vibe_providers.kit",
+]
+
+# The extensibility guarantee: providers never import each other. Wildcard covers
+# every future provider package automatically (scaffolded or third-party in-repo).
+[[tool.importlinter.contracts]]
+name = "Providers are independent of one another"
+type = "independence"
+modules = ["vibe_providers.adapters.*"]
+
+# Providers may depend on the domain (models, errors, ports) and the kit - nothing else
+# from the app (no infrastructure, application services or API).
+[[tool.importlinter.contracts]]
+name = "Providers only depend on vibe.domain"
+type = "forbidden"
+source_modules = ["vibe_providers"]
+forbidden_modules = [
+    "vibe.infrastructure",
+    "vibe.application",
+    "vibe.api",
+]

@@ -9,14 +9,14 @@ description: >-
 # Provider Scaffolder Skill
 
 This skill guides the creation of a new agent infrastructure adapter for Vibe Forge.
-The architecture enforces strict domain isolation: adding a provider means creating a new isolated package in `backend/vibe/infrastructure/providers/<name>/` and appending an entry to `config/providers.yaml`. Core domain, application services, and UI layers remain untouched.
+The architecture enforces strict domain isolation: adding a provider means creating a new isolated package in `project/backend/providers/vibe_providers/adapters/<name>/` and appending an entry to `project/config/providers.yaml`. Core domain, application services, and UI layers remain untouched.
 
 ## 1. Automated Scaffolding
 
 Run the scaffold script from the workspace root:
 
 ```powershell
-backend\.venv\Scripts\python.exe .agents\skills\provider-scaffolder-skill\scripts\scaffold_provider.py --name <provider_name>
+project\backend\.venv\Scripts\python.exe .agents\skills\provider-scaffolder-skill\scripts\scaffold_provider.py --name <provider_name>
 ```
 
 Options:
@@ -28,12 +28,12 @@ Options:
 ### Generated File Structure
 
 The script generates:
-- `backend/vibe/infrastructure/providers/<name>/__init__.py`: Package export.
-- `backend/vibe/infrastructure/providers/<name>/adapter.py`: Adapter subclassing `BaseAgentRunner`.
-- `backend/vibe/infrastructure/providers/<name>/mapping.py`: Pure mapping from `ExecutionTask` to provider-native request payloads.
-- `backend/vibe/infrastructure/providers/<name>/errors.py`: Error translator from native exceptions to the domain taxonomy.
-- `backend/tests/providers/test_<name>.py`: Contract test suite subclassing `ProviderContractTests`.
-- Appends a disabled entry to `config/providers.yaml`.
+- `project/backend/providers/vibe_providers/adapters/<name>/__init__.py`: Package export.
+- `project/backend/providers/vibe_providers/adapters/<name>/adapter.py`: Adapter subclassing `BaseAgentRunner`.
+- `project/backend/providers/vibe_providers/adapters/<name>/mapping.py`: Pure mapping from `ExecutionTask` to provider-native request payloads.
+- `project/backend/providers/vibe_providers/adapters/<name>/errors.py`: Error translator from native exceptions to the domain taxonomy.
+- `project/tests/providers/test_<name>.py`: Contract test suite subclassing `ProviderContractTests`.
+- Appends a disabled entry to `project/config/providers.yaml`.
 
 ## 2. Adapter Implementation Checklist
 
@@ -55,9 +55,9 @@ When filling in the generated templates:
    - `can_modify_workspace`: set to `True` for agentic coding runners.
 
 4. **Preserve Isolation**:
-   - Never import from sibling providers (`vibe.infrastructure.providers.<other>`).
-   - Never import from `vibe.infrastructure.persistence`, `vibe.infrastructure.eventing`, or `vibe.api`.
-   - Only import from `vibe.domain`, `vibe.domain.ports`, and `vibe.infrastructure.provider_kit`.
+   - Never import from sibling providers (`vibe_providers.adapters.<other>`).
+   - Never import from `vibe.infrastructure`, `vibe.application`, or `vibe.api` (providers depend only on `vibe.domain`).
+   - Only import from `vibe.domain`, `vibe.domain.ports`, and `vibe_providers.kit`.
 
 ## 3. Verification & Quality Gates
 
@@ -65,13 +65,13 @@ Run the verification suite:
 
 ```powershell
 # Run the contract tests for your provider
-backend\.venv\Scripts\python.exe -m pytest backend/tests/providers/test_<name>.py
+project\backend\.venv\Scripts\python.exe -m pytest project/tests/providers/test_<name>.py
 
-# Run architecture boundary checks (must keep all 5 contracts)
-backend\.venv\Scripts\lint-imports.exe
+# Run architecture boundary checks (must keep all contracts)
+project\backend\.venv\Scripts\lint-imports.exe --config project/backend/providers/pyproject.toml
 
 # Format and lint
-backend\.venv\Scripts\ruff.exe check backend/vibe/infrastructure/providers/<name>
-backend\.venv\Scripts\ruff.exe format --check backend/vibe/infrastructure/providers/<name>
-backend\.venv\Scripts\mypy.exe
+project\backend\.venv\Scripts\ruff.exe check project/backend/providers/vibe_providers/adapters/<name>
+project\backend\.venv\Scripts\ruff.exe format --check project/backend/providers/vibe_providers/adapters/<name>
+project\backend\.venv\Scripts\mypy.exe --config-file project/backend/providers/pyproject.toml project/backend/providers/vibe_providers
 ```

@@ -17,9 +17,9 @@ from collections.abc import AsyncIterator
 
 from vibe.domain.enums import EventType
 from vibe.domain.models import ExecutionTask, HealthStatus, ProviderCapabilities, StreamEvent
-from vibe.infrastructure.provider_kit import BaseAgentRunner
-from vibe.infrastructure.providers.$name.errors import translate_error
-from vibe.infrastructure.providers.$name.mapping import build_request
+from vibe_providers.adapters.$name.errors import translate_error
+from vibe_providers.adapters.$name.mapping import build_request
+from vibe_providers.kit import BaseAgentRunner
 
 
 class $class_name(BaseAgentRunner):

@@ -1,0 +1,12 @@
+line-length = 100
+target-version = "py310"
+extend-exclude = [".venv"]
+src = ["backend/app", "backend/providers", "."]
+
+[lint]
+select = ["E", "F", "I", "UP", "B", "ASYNC", "SIM", "RUF"]
+ignore = ["RUF012"]
+
+[lint.per-file-ignores]
+# Runnable script: extends sys.path before importing the app, and prints a banner.
+"scripts/*.py" = ["E402", "E501"]

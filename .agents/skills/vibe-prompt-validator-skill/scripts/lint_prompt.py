@@ -19,7 +19,7 @@ from pathlib import Path
 
 # Add backend directory to path if running directly from script location
 repo_root = Path(__file__).resolve().parents[4]
-backend_dir = repo_root / "backend"
+backend_dir = repo_root / "project" / "backend" / "app"
 if str(backend_dir) not in sys.path:
     sys.path.insert(0, str(backend_dir))
 

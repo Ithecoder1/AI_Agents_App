@@ -1,6 +1,6 @@
 # Secrets & local overrides
 .env
-config/*.local.yaml
+project/config/*.local.yaml
 
 # Runtime data
 data/
@@ -20,7 +20,7 @@ __pycache__/
 
 # Node
 node_modules/
-web/dist/
+project/web/dist/
 
 # OS / editor
 .DS_Store

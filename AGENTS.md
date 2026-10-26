@@ -6,24 +6,24 @@ Welcome to **Vibe Forge**, a multi-provider vibe-coding web application and exec
 
 This project follows **Hexagonal / Clean Architecture**. Adding a new agent provider or execution runner requires **zero modifications** to core domain, application logic, or UI layers.
 
-1. **Pure Domain (`backend/vibe/domain`)**: Data models, state machine, typed errors, and ports. Stdlib only.
-2. **Application (`backend/vibe/application`)**: `ProviderRegistry`, `PromptLinter`, `AppSettings`, execution coordination. No direct I/O.
-3. **Infrastructure (`backend/vibe/infrastructure`)**:
-   - `provider_kit/`: `BaseAgentRunner` template-method class.
-   - `providers/<name>/`: Isolated adapters (OpenRouter, Antigravity, custom packages, Fake).
-   - `config/`: YAML/env loader with failure isolation and `${VAR}` interpolation.
-4. **Presentation (`backend/vibe/api` & `web`)**: FastAPI REST/WebSocket endpoints and React/Vite UI.
+1. **Pure Domain (`project/backend/app/vibe/domain`)**: Data models, state machine, typed errors, and ports. Stdlib only.
+2. **Application (`project/backend/app/vibe/application`)**: `ProviderRegistry`, `PromptLinter`, `AppSettings`, execution coordination. No direct I/O.
+3. **App Infrastructure (`project/backend/app/vibe/infrastructure`)**: `config/` (YAML/env loader with failure isolation and `${VAR}` interpolation), `workspace/`, persistence, eventing.
+4. **LLM Providers (`project/backend/providers/vibe_providers`)** - a separate package, depends only on `vibe.domain`; the app never imports it:
+   - `kit/`: `BaseAgentRunner` template-method class and HTTP streaming runner.
+   - `adapters/<name>/`: Isolated adapters (OpenRouter, Gemini, Anthropic, Antigravity, custom packages, Fake).
+5. **Presentation (`project/backend/app/vibe/api` & `project/web`)**: FastAPI REST/WebSocket endpoints and React/Vite UI.
 
 ## 🛠️ Workspace Skills & Tools
 
 The repository contains automated skills in `.agents/skills/`:
 - **`provider-scaffolder-skill`**: Scaffold a new isolated provider package and contract test in seconds:
   ```powershell
-  backend\.venv\Scripts\python.exe .agents\skills\provider-scaffolder-skill\scripts\scaffold_provider.py --name <provider_name>
+  project\backend\.venv\Scripts\python.exe .agents\skills\provider-scaffolder-skill\scripts\scaffold_provider.py --name <provider_name>
   ```
 - **`vibe-prompt-validator-skill`**: Lint prompt files and check quality/token economy:
   ```powershell
-  backend\.venv\Scripts\python.exe .agents\skills\vibe-prompt-validator-skill\scripts\lint_prompt.py --prompt "Your prompt"
+  project\backend\.venv\Scripts\python.exe .agents\skills\vibe-prompt-validator-skill\scripts\lint_prompt.py --prompt "Your prompt"
   ```
 - **`execution-resilience-skill`**: Guide for fault tolerance, backoff, circuit breakers, and error mapping.
 
@@ -33,15 +33,17 @@ Always run these quality gates before committing code changes:
 
 ```powershell
 # 1. Test suite
-backend\.venv\Scripts\python.exe -m pytest backend/tests
+project\backend\.venv\Scripts\python.exe -m pytest project/tests
 
 # 2. Architecture boundary checks (import-linter)
-backend\.venv\Scripts\lint-imports.exe --config backend/pyproject.toml
+project\backend\.venv\Scripts\lint-imports.exe --config project/backend/app/pyproject.toml
+project\backend\.venv\Scripts\lint-imports.exe --config project/backend/providers/pyproject.toml
 
 # 3. Linter & format checks
-backend\.venv\Scripts\ruff.exe check backend
-backend\.venv\Scripts\ruff.exe format --check backend
+project\backend\.venv\Scripts\ruff.exe check project
+project\backend\.venv\Scripts\ruff.exe format --check project
 
 # 4. Strict type checker
-backend\.venv\Scripts\mypy.exe --config-file backend/pyproject.toml backend
+project\backend\.venv\Scripts\mypy.exe --config-file project/backend/app/pyproject.toml project/backend/app/vibe
+project\backend\.venv\Scripts\mypy.exe --config-file project/backend/providers/pyproject.toml project/backend/providers/vibe_providers
 ```

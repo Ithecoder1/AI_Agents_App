@@ -2,8 +2,8 @@
 """Scaffold a new agent provider WITHOUT touching any existing provider or core code.
 
 Creates exactly:
-  backend/vibe/infrastructure/providers/<name>/{__init__,adapter,mapping,errors}.py
-  backend/tests/providers/test_<name>.py
+  backend/providers/vibe_providers/adapters/<name>/{__init__,adapter,mapping,errors}.py
+  tests/providers/test_<name>.py
 and APPENDS one (disabled) entry to config/providers.yaml.
 
 Usage:
@@ -25,7 +25,8 @@ from string import Template
 
 SKILL_DIR = Path(__file__).resolve().parents[1]
 TEMPLATES = SKILL_DIR / "templates"
-DEFAULT_REPO_ROOT = Path(__file__).resolve().parents[4]  # <repo>/.agents/skills/<skill>/scripts/
+# <repo>/.agents/skills/<skill>/scripts/ -> core project lives in <repo>/project
+DEFAULT_REPO_ROOT = Path(__file__).resolve().parents[4] / "project"
 
 NAME_RE = re.compile(r"^[a-z][a-z0-9_]*$")
 RESERVED = {"fake", "openrouter", "antigravity", "package_runner", "base", "kit", "test", "tests"}
@@ -60,8 +61,8 @@ def scaffold(
     if not re.match(r"^[A-Z][A-Za-z0-9]*$", class_name):
         raise ScaffoldError(f"--class-name must be CamelCase (got {class_name!r})")
 
-    package_dir = repo_root / "backend" / "vibe" / "infrastructure" / "providers" / name
-    test_file = repo_root / "backend" / "tests" / "providers" / f"test_{name}.py"
+    package_dir = repo_root / "backend" / "providers" / "vibe_providers" / "adapters" / name
+    test_file = repo_root / "tests" / "providers" / f"test_{name}.py"
     config_file = repo_root / "config" / "providers.yaml"
 
     if package_dir.exists():

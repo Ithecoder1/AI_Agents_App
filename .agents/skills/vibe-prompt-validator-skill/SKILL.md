@@ -16,7 +16,7 @@ This skill enforces quality, security, and token economy across all prompts exec
 Run the linter CLI on any prompt text or file:
 
 ```powershell
-backend\.venv\Scripts\python.exe .agents\skills\vibe-prompt-validator-skill\scripts\lint_prompt.py --prompt "Your draft prompt" --system "Role and constraints"
+project\backend\.venv\Scripts\python.exe .agents\skills\vibe-prompt-validator-skill\scripts\lint_prompt.py --prompt "Your draft prompt" --system "Role and constraints"
 ```
 
 The tool returns a JSON `LintReport` with:

@@ -6,6 +6,10 @@ import logging
 from collections.abc import Mapping
 from pathlib import Path
 
+from sqlalchemy.ext.asyncio import AsyncEngine
+
+from app.application.chat_sessions import ChatSessionService
+from app.application.chat_turns import ChatTurnService
 from app.application.registry import ProviderRegistry, ProviderState
 from app.application.settings import AppSettings
 from app.application.workspace_manager import WorkspaceManager
@@ -15,6 +19,13 @@ from app.infrastructure.config import (
     load_environment,
     load_provider_configs,
     load_settings,
+)
+from app.infrastructure.persistence import (
+    SqlAlchemyChatRepository,
+    create_engine,
+    create_session_factory,
+    resolve_database_url,
+    upgrade_database,
 )
 from app.infrastructure.workspace import YamlManifestParser
 
@@ -63,3 +74,30 @@ def build_workspace_manager(root: Path | None = None) -> WorkspaceManager:
 
 def default_workspace_manager() -> WorkspaceManager:
     return build_workspace_manager(repo_root())
+
+
+def build_chat_services(
+    settings: AppSettings,
+    registry: ProviderRegistry,
+    workspace_manager: WorkspaceManager,
+    root: Path | None = None,
+) -> tuple[AsyncEngine, SqlAlchemyChatRepository, ChatSessionService, ChatTurnService]:
+    base = root or repo_root()
+    url = resolve_database_url(settings.storage.db_url, base)
+    upgrade_database(url)
+    engine = create_engine(url)
+    session_factory = create_session_factory(engine)
+    chat_repo = SqlAlchemyChatRepository(session_factory)
+    chat_session_service = ChatSessionService(chat_repo)
+    chat_turn_service = ChatTurnService(
+        chat_session_service, chat_repo, registry, workspace_manager
+    )
+    return engine, chat_repo, chat_session_service, chat_turn_service
+
+
+def default_chat_services(
+    settings: AppSettings,
+    registry: ProviderRegistry,
+    workspace_manager: WorkspaceManager,
+) -> tuple[AsyncEngine, SqlAlchemyChatRepository, ChatSessionService, ChatTurnService]:
+    return build_chat_services(settings, registry, workspace_manager, repo_root())

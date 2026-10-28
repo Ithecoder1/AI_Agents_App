@@ -2,6 +2,7 @@
 
 from app.domain.ports.agent_provider import IAgentProvider, ProviderDeps, ProviderFactory
 from app.domain.ports.artifacts import ArtifactStore
+from app.domain.ports.chat import ChatRepository
 from app.domain.ports.events import EventBus, EventStore
 from app.domain.ports.queue import TaskQueue
 from app.domain.ports.repositories import PromptRepository, TaskRepository
@@ -10,6 +11,7 @@ from app.domain.ports.workspace import IManifestParser
 
 __all__ = [
     "ArtifactStore",
+    "ChatRepository",
     "EventBus",
     "EventStore",
     "IAgentProvider",

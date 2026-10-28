@@ -28,7 +28,7 @@ _FINISH_REASONS = {"end_turn": "stop", "stop_sequence": "stop", "max_tokens": "l
 
 
 def build_request(task: ExecutionTask, model: str, options: Mapping[str, Any]) -> HttpRequest:
-    system, user = task.prompt_snapshot.render()
+    system, turns = task.prompt_snapshot.render_messages()
     params = task.params
     budget = resolve_int_param(task, options, "thinking_budget")
 
@@ -48,7 +48,7 @@ def build_request(task: ExecutionTask, model: str, options: Mapping[str, Any]) -
         "model": model,
         "max_tokens": max_tokens,
         "stream": True,
-        "messages": [{"role": "user", "content": user}],
+        "messages": [{"role": turn.role, "content": turn.content} for turn in turns],
     }
     if system:
         body["system"] = system

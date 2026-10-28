@@ -29,7 +29,7 @@ _BLOCKED_FINISH = {
 
 
 def build_request(task: ExecutionTask, model: str, options: Mapping[str, Any]) -> HttpRequest:
-    system, user = task.prompt_snapshot.render()
+    system, turns = task.prompt_snapshot.render_messages()
     params = task.params
 
     config: dict[str, Any] = {}
@@ -45,7 +45,14 @@ def build_request(task: ExecutionTask, model: str, options: Mapping[str, Any]) -
     if budget is not None:
         config["thinkingConfig"] = {"includeThoughts": budget != 0, "thinkingBudget": budget}
 
-    body: dict[str, Any] = {"contents": [{"role": "user", "parts": [{"text": user}]}]}
+    contents: list[dict[str, Any]] = [
+        {
+            "role": "model" if turn.role == "assistant" else "user",
+            "parts": [{"text": turn.content}],
+        }
+        for turn in turns
+    ]
+    body: dict[str, Any] = {"contents": contents}
     if system:
         body["systemInstruction"] = {"parts": [{"text": system}]}
     if config:

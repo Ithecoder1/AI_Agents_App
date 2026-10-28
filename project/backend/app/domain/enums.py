@@ -33,6 +33,7 @@ class EventType(str, Enum):
     STATUS = "status"
     TOKEN = "token"
     THOUGHT = "thought"
+    PLAN = "plan"
     TOOL_CALL = "tool_call"
     TOOL_RESULT = "tool_result"
     LOG = "log"

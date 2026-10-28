@@ -19,11 +19,12 @@ from providers.kit.params import resolve_param
 
 
 def build_request(task: ExecutionTask, model: str, options: Mapping[str, Any]) -> HttpRequest:
-    system, user = task.prompt_snapshot.render()
+    system, turns = task.prompt_snapshot.render_messages()
     messages: list[dict[str, str]] = []
     if system:
         messages.append({"role": "system", "content": system})
-    messages.append({"role": "user", "content": user})
+    for turn in turns:
+        messages.append({"role": turn.role, "content": turn.content})
 
     body: dict[str, Any] = {
         "model": model,

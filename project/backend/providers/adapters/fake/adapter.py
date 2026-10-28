@@ -140,7 +140,8 @@ class FakeProvider(BaseAgentRunner):
         try:
             yield self.event(task, EventType.STATUS, state="started", provider=self.config.id)
             try:
-                _system, user = task.prompt_snapshot.render()
+                _system, turns = task.prompt_snapshot.render_messages()
+                user = turns[-1].content if turns else ""
             except ValidationError as exc:
                 raise InvalidRequestError(str(exc), provider_id=self.config.id) from exc
 

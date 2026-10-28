@@ -37,6 +37,14 @@ class ProviderNotFoundError(VibeError):
     """No provider is registered under the requested id."""
 
 
+class NotFoundError(VibeError):
+    """A requested aggregate (chat session, message, ...) does not exist."""
+
+
+class ConflictError(VibeError):
+    """The request conflicts with current state (e.g. a turn is already running)."""
+
+
 class ErrorInfo:
     """Serializable, immutable description of a failure (stored on results/attempts)."""
 

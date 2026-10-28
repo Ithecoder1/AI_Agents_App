@@ -35,6 +35,23 @@ def utcnow() -> datetime:
 # --------------------------------------------------------------------------- #
 # Prompt
 # --------------------------------------------------------------------------- #
+CHAT_TURN_ROLES = ("user", "assistant")
+
+
+@dataclass(frozen=True, slots=True)
+class ChatTurn:
+    """One prior conversation turn handed to a provider (clean role + final text only)."""
+
+    role: str
+    content: str
+
+    def __post_init__(self) -> None:
+        if self.role not in CHAT_TURN_ROLES:
+            raise ValidationError(
+                f"ChatTurn role must be one of {CHAT_TURN_ROLES}, got {self.role!r}"
+            )
+
+
 @dataclass(frozen=True, slots=True)
 class Prompt:
     user_prompt: str
@@ -44,6 +61,11 @@ class Prompt:
     id: str = field(default_factory=new_id)
     version: int = 1
     created_at: datetime = field(default_factory=utcnow)
+    # Earlier turns of a multi-turn conversation, oldest first. Strict alternation is not
+    # required; adapters normalise for their API. Empty for single-shot executions.
+    history: tuple[ChatTurn, ...] = ()
+    # True = send text verbatim (chat): ``{{x}}`` in user/system text is not a template variable.
+    literal: bool = False
 
     def variables_used(self) -> set[str]:
         return prompt_template.find_variables(
@@ -52,10 +74,28 @@ class Prompt:
 
     def render(self) -> tuple[str, str]:
         """Return ``(system_instructions, user_prompt)`` with variables substituted."""
+        if self.literal:
+            return self.system_instructions, self.user_prompt
         return (
             prompt_template.render(self.system_instructions, self.parameters),
             prompt_template.render(self.user_prompt, self.parameters),
         )
+
+    def render_messages(self) -> tuple[str, tuple[ChatTurn, ...]]:
+        """Return ``(system_instructions, messages)``: ``history`` followed by the current user
+        turn. History is always verbatim -- only the current prompt is templated.
+
+        Consecutive turns with the same role (e.g. after a failed earlier turn left a dangling
+        user message) are merged, so providers always receive strictly alternating roles.
+        """
+        system, user = self.render()
+        merged: list[ChatTurn] = []
+        for turn in (*self.history, ChatTurn("user", user)):
+            if merged and merged[-1].role == turn.role:
+                merged[-1] = ChatTurn(turn.role, f"{merged[-1].content}\n\n{turn.content}")
+            else:
+                merged.append(turn)
+        return system, tuple(merged)
 
 
 # --------------------------------------------------------------------------- #
@@ -162,6 +202,9 @@ class Usage:
     prompt_tokens: int = 0
     completion_tokens: int = 0
     cost_usd: float | None = None
+    # Thinking tokens. A SUBSET of ``completion_tokens`` (already counted there), reported
+    # separately so the UI can break the output down.
+    reasoning_tokens: int = 0
 
     @property
     def total_tokens(self) -> int:
@@ -175,6 +218,7 @@ class Usage:
             self.prompt_tokens + other.prompt_tokens,
             self.completion_tokens + other.completion_tokens,
             cost,
+            self.reasoning_tokens + other.reasoning_tokens,
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -182,6 +226,7 @@ class Usage:
             "prompt_tokens": self.prompt_tokens,
             "completion_tokens": self.completion_tokens,
             "cost_usd": self.cost_usd,
+            "reasoning_tokens": self.reasoning_tokens,
         }
 
     @classmethod
@@ -191,6 +236,7 @@ class Usage:
             int(data.get("prompt_tokens", 0) or 0),
             int(data.get("completion_tokens", 0) or 0),
             float(cost) if cost is not None else None,
+            int(data.get("reasoning_tokens", 0) or 0),
         )
 
 

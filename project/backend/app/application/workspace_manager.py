@@ -7,6 +7,7 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
+from app.domain.chat import ContextSnapshot
 from app.domain.errors import ValidationError
 from app.domain.models import ProjectManifest, WorkspaceContext
 from app.domain.ports.workspace import IManifestParser
@@ -218,6 +219,36 @@ class WorkspaceManager:
             except Exception:
                 continue
         return summaries
+
+    def collect_context_items(self, workspace: WorkspaceContext) -> tuple[ContextSnapshot, ...]:
+        """Structured record of the context :meth:`enrich_system_instructions` attaches to a turn.
+
+        Stored on the assistant message so the UI can show what the model was given.
+        """
+        items: list[ContextSnapshot] = []
+        for rel_file, text in self.load_context_summaries(workspace).items():
+            items.append(
+                ContextSnapshot(
+                    kind="file",
+                    label=rel_file,
+                    path=rel_file,
+                    content=text[:600],
+                    size_bytes=len(text.encode("utf-8")),
+                    truncated=text.endswith("... [truncated]") or len(text) > 600,
+                )
+            )
+        tree_lines: list[str] = []
+        self._format_tree_text(self.scan_tree(workspace, max_depth=2), tree_lines)
+        items.append(
+            ContextSnapshot(
+                kind="directory_tree",
+                label=f"{workspace.name} (depth 2)",
+                path=".",
+                content="\n".join(tree_lines),
+                size_bytes=len("\n".join(tree_lines).encode("utf-8")),
+            )
+        )
+        return tuple(items)
 
     def enrich_system_instructions(
         self,

@@ -1,7 +1,7 @@
 /**
  * VIBE FORGE WEB CLIENT
- * Meta-Agent Studio: Multi-Workspace Tabbed Interface, Real-time WebSocket Streaming,
- * Prompt Quality Linter, Context Inspector, and Artifact Diff Rendering.
+ * Meta-Agent Studio: Multi-Workspace Tabbed Interface, SQLite-backed Multi-Turn Chat,
+ * Real-time WebSocket Streaming, Session Telemetry Bar, and Collapsible Message Inspector.
  */
 
 (() => {
@@ -13,42 +13,49 @@
     providerStatusText: document.getElementById('provider-status-text'),
     apiHealthBadge: document.getElementById('api-health-badge'),
 
-    // Workspace Navigation & Card
+    // Workspace Navigation & Actions
     workspaceTabs: document.getElementById('workspace-tabs'),
+    btnToggleWsDrawer: document.getElementById('btn-toggle-ws-drawer'),
     btnAddWorkspace: document.getElementById('btn-add-workspace'),
-    wsBadgeSelf: document.getElementById('ws-badge-self'),
-    wsActiveName: document.getElementById('ws-active-name'),
-    wsActiveId: document.getElementById('ws-active-id'),
-    wsMetaRuntime: document.getElementById('ws-meta-runtime'),
-    wsMetaTest: document.getElementById('ws-meta-test'),
-    wsActivePath: document.getElementById('ws-active-path'),
-    statWorkspaceLabel: document.getElementById('stat-workspace-label'),
 
-    // Prompt Studio
+    // Chat Sidebar
+    chatSessionsList: document.getElementById('chat-sessions-list'),
+    btnNewChat: document.getElementById('btn-new-chat'),
+    chatSearchInput: document.getElementById('chat-search-input'),
+
+    // Session Telemetry Bar
+    sessionTitle: document.getElementById('session-title'),
+    btnEditTitle: document.getElementById('btn-edit-title'),
+    sessionWorkspaceTag: document.getElementById('session-workspace-tag'),
     providerSelect: document.getElementById('provider-select'),
     modelSelect: document.getElementById('model-select'),
+    sessionStatTokens: document.getElementById('session-stat-tokens'),
+    sessionStatCost: document.getElementById('session-stat-cost'),
+    sessionStatTurns: document.getElementById('session-stat-turns'),
+
+    // Messages Container
+    messagesContainer: document.getElementById('messages-container'),
+    messagesInner: document.getElementById('messages-inner'),
+    chatWelcome: document.getElementById('chat-welcome'),
+
+    // Composer
+    systemInstructionsDrawer: document.getElementById('system-instructions-drawer'),
+    btnToggleSystem: document.getElementById('btn-toggle-system'),
     systemPromptInput: document.getElementById('system-prompt-input'),
     userPromptInput: document.getElementById('user-prompt-input'),
-    btnLintPrompt: document.getElementById('btn-lint-prompt'),
+    lintScoreBadge: document.getElementById('lint-score-badge'),
+    lintScoreText: document.getElementById('lint-score-text'),
+    tokenEstimateBadge: document.getElementById('token-estimate-badge'),
     btnExecute: document.getElementById('btn-execute'),
     btnStop: document.getElementById('btn-stop'),
-    btnClear: document.getElementById('btn-clear'),
 
-    // Linter Widget
-    lintScoreBadge: document.getElementById('lint-score-badge'),
-    lintScoreVal: document.getElementById('lint-score-val'),
-    tokenEstimateBadge: document.getElementById('token-estimate-badge'),
-    linterIssuesList: document.getElementById('linter-issues-list'),
-
-    // Dashboard Tabs & Panes
-    taskStatusBadge: document.getElementById('task-status-badge'),
-    terminalOutput: document.getElementById('terminal-output'),
-    diffContainer: document.getElementById('diff-container'),
-    rawJsonOutput: document.getElementById('raw-json-output'),
-    statTokens: document.getElementById('stat-tokens'),
-    statDuration: document.getElementById('stat-duration'),
-
-    // Context & Tree Inspector
+    // Workspace Drawer (Right Slide-over)
+    wsDrawer: document.getElementById('ws-drawer'),
+    btnCloseWsDrawer: document.getElementById('btn-close-ws-drawer'),
+    drawerWsName: document.getElementById('drawer-ws-name'),
+    wsActivePath: document.getElementById('ws-active-path'),
+    wsMetaRuntime: document.getElementById('ws-meta-runtime'),
+    wsMetaTest: document.getElementById('ws-meta-test'),
     inspectorManifestJson: document.getElementById('inspector-manifest-json'),
     inspectorContextChips: document.getElementById('inspector-context-chips'),
     inspectorDocPreview: document.getElementById('inspector-doc-preview'),
@@ -66,20 +73,19 @@
     modalError: document.getElementById('modal-error')
   };
 
-  // --- Multi-Workspace & Global State ---
+  // --- Global Application State ---
   let providers = [];
-  let workspaces = []; // list of summary items from /api/workspaces
+  let workspaces = [];
   let activeWorkspaceId = 'root';
+  let activeSessionId = null;
+  let activeSessionData = null; // full session dict with messages & telemetry
+  let workspaceSessions = []; // list of session summaries for active workspace
 
-  // State store keyed by workspace_id
-  const workspaceStateStore = {};
+  let activeWebSocket = null;
+  let activeStreamMessageId = null;
+  let lintDebounceTimer = null;
 
-  let activeSocket = null;
-  let socketTargetWsId = null;
-  let executionStartTime = null;
-  let timerInterval = null;
-
-  // --- Presets ---
+  // Quick prompt presets
   const PRESETS = {
     refactor: {
       system: "You are a Principal Software Architect. Focus on clean code, domain isolation, and resilient patterns. Provide a unified diff.",
@@ -126,7 +132,7 @@
           root_path: ws.root_path,
           is_self: Boolean(ws.is_self),
           manifest: ws.manifest,
-          runtime: ws.manifest?.runtime || 'custom',
+          runtime: ws.manifest?.runtime || 'python:3.10',
           version: ws.manifest?.version || '0.1.0',
           test_command: ws.manifest?.test_command || null,
           context_files: ws.manifest?.context_files || []
@@ -141,20 +147,9 @@
           is_self: true,
           runtime: 'python:3.10',
           version: '0.1.0',
-          test_command: 'pytest backend/tests',
+          test_command: 'pytest project/tests',
           context_files: ['README.md', 'AGENTS.md']
         }];
-      }
-    },
-
-    async fetchWorkspaceDetails(workspaceId) {
-      try {
-        const res = await fetch(`/api/workspaces/${encodeURIComponent(workspaceId)}`);
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        return await res.json();
-      } catch (err) {
-        console.error(`Failed to fetch details for workspace ${workspaceId}:`, err);
-        return null;
       }
     },
 
@@ -182,6 +177,76 @@
       return data;
     },
 
+    async fetchWorkspaceChats(projectId) {
+      try {
+        const res = await fetch(`/api/workspaces/${encodeURIComponent(projectId)}/chats`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return await res.json();
+      } catch (err) {
+        console.error(`Failed to load chats for workspace ${projectId}:`, err);
+        return [];
+      }
+    },
+
+    async createChat(projectId, title = null, providerId = 'fake', model = null) {
+      const res = await fetch(`/api/workspaces/${encodeURIComponent(projectId)}/chats`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: title || undefined,
+          provider_id: providerId,
+          model: model || undefined
+        })
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return await res.json();
+    },
+
+    async fetchChatSession(sessionId) {
+      const res = await fetch(`/api/chats/${encodeURIComponent(sessionId)}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return await res.json();
+    },
+
+    async renameChat(sessionId, title) {
+      const res = await fetch(`/api/chats/${encodeURIComponent(sessionId)}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title })
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return await res.json();
+    },
+
+    async deleteChat(sessionId) {
+      const res = await fetch(`/api/chats/${encodeURIComponent(sessionId)}`, {
+        method: 'DELETE'
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return await res.json();
+    },
+
+    async sendChatMessage(sessionId, payload) {
+      const res = await fetch(`/api/chats/${encodeURIComponent(sessionId)}/messages`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.detail?.error || data.error || `HTTP ${res.status}`);
+      }
+      return data;
+    },
+
+    async cancelChatTurn(sessionId) {
+      const res = await fetch(`/api/chats/${encodeURIComponent(sessionId)}/cancel`, {
+        method: 'POST'
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return await res.json();
+    },
+
     async lintPrompt(userPrompt, systemInstructions) {
       try {
         const res = await fetch('/api/prompts/lint', {
@@ -198,44 +263,82 @@
     }
   };
 
-  // --- State Initialization Helper ---
-  function getOrCreateWorkspaceState(wsId, wsInfo = null) {
-    if (!workspaceStateStore[wsId]) {
-      const isSelf = wsInfo?.is_self ?? (wsId === 'root' || wsId === 'self');
-      workspaceStateStore[wsId] = {
-        userPrompt: isSelf
-          ? "Refactor the database connection pool to support automatic retry backoff on connection timeouts."
-          : `Analyze and improve the codebase architecture for ${wsInfo?.name || wsId}.`,
-        systemPrompt: "You are a Principal Software Architect. Focus on clean code, domain isolation, and resilient patterns. Output unified diffs where appropriate.",
-        providerId: el.providerSelect?.value || 'fake',
-        model: '',
-        terminalHtml: `<div class="terminal-line status">Workspace [${wsInfo?.name || wsId}] initialized. Ready to execute sandboxed tasks.</div>`,
-        diffHtml: '<div style="color:#64748b; padding:16px;">No artifacts generated yet...</div>',
-        rawEvents: [],
-        accumulatedOutput: '',
-        statTokens: '0 (0 in / 0 out)',
-        statDuration: '0.0s',
-        taskStatus: 'IDLE',
-        taskStatusColor: 'var(--text-muted)',
-        manifest: null,
-        contextSummaries: {},
-        tree: []
-      };
-    }
-    return workspaceStateStore[wsId];
+  // --- Formatters ---
+  function formatRelativeTime(dateString) {
+    if (!dateString) return '';
+    const date = new Date(dateString);
+    const now = new Date();
+    const diffSec = Math.floor((now - date) / 1000);
+    if (diffSec < 60) return 'Just now';
+    const diffMin = Math.floor(diffSec / 60);
+    if (diffMin < 60) return `${diffMin}m ago`;
+    const diffHours = Math.floor(diffMin / 60);
+    if (diffHours < 24) return `${diffHours}h ago`;
+    const diffDays = Math.floor(diffHours / 24);
+    if (diffDays === 1) return 'Yesterday';
+    if (diffDays < 7) return `${diffDays}d ago`;
+    return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
   }
 
-  // --- UI Updates ---
-  function updateProviderUI() {
+  function formatTokens(num) {
+    if (num == null) return '0';
+    if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M';
+    if (num >= 1000) return (num / 1000).toFixed(1) + 'k';
+    return String(num);
+  }
+
+  function formatCost(cost) {
+    if (cost == null || isNaN(cost)) return '$0.000';
+    return `$${Number(cost).toFixed(4)}`;
+  }
+
+  function escapeHtml(str) {
+    if (!str) return '';
+    return str
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
+  }
+
+  function formatMarkdown(text) {
+    if (!text) return '';
+    // Code blocks with syntax / copy
+    text = text.replace(/```([a-zA-Z0-9_\-\.]*)\n([\s\S]*?)```/g, (match, lang, code) => {
+      if (lang === 'diff') {
+        const lines = code.split('\n').map(l => {
+          let cls = '';
+          if (l.startsWith('+') && !l.startsWith('+++')) cls = 'add';
+          else if (l.startsWith('-') && !l.startsWith('---')) cls = 'del';
+          else if (l.startsWith('@@') || l.startsWith('---') || l.startsWith('+++')) cls = 'header';
+          return `<div class="diff-line ${cls}">${escapeHtml(l)}</div>`;
+        }).join('');
+        return `<div class="diff-viewer">${lines}</div>`;
+      }
+      return `<pre><code class="language-${lang}">${escapeHtml(code)}</code></pre>`;
+    });
+
+    // Inline code
+    text = text.replace(/`([^`]+)`/g, '<code>$1</code>');
+    // Bold
+    text = text.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+    // Line breaks
+    text = text.replace(/\n\n/g, '<br/><br/>').replace(/\n/g, '<br/>');
+    return text;
+  }
+
+  // --- UI Renderers ---
+  function updateProvidersUI() {
     const selectedId = el.providerSelect.value;
-    const provider = providers.find(p => p.id === selectedId);
+    const provider = providers.find(p => p.id === selectedId) || providers[0];
     if (!provider) return;
 
     const isReady = provider.state === 'ready' && provider.health && provider.health.ok;
     el.providerHealthDot.className = `badge-dot ${isReady ? 'active' : ''}`;
     el.providerStatusText.textContent = isReady ? 'Ready' : (provider.health?.reason || provider.state);
 
-    // Update models
+    // Populate models
     const currentModelVal = el.modelSelect.value;
     el.modelSelect.innerHTML = '';
     const models = provider.capabilities?.models || [];
@@ -250,333 +353,632 @@
     } else {
       const opt = document.createElement('option');
       opt.value = '';
-      opt.textContent = 'Default Engine Model';
+      opt.textContent = 'Default Model';
       el.modelSelect.appendChild(opt);
     }
   }
 
-  function renderLintReport(report) {
-    if (!report) return;
-
-    el.lintScoreVal.textContent = report.score;
-    el.lintScoreBadge.className = 'score-pill ' + (report.score >= 80 ? 'good' : report.score >= 50 ? 'warn' : 'bad');
-    el.tokenEstimateBadge.textContent = `~${report.token_estimate} tokens`;
-
-    el.linterIssuesList.innerHTML = '';
-    if (report.issues.length === 0) {
-      const item = document.createElement('div');
-      item.className = 'issue-item info';
-      item.innerHTML = '<strong>✨ Excellent prompt!</strong> Adheres to all quality and security dimensions.';
-      el.linterIssuesList.appendChild(item);
-    } else {
-      report.issues.forEach(issue => {
-        const item = document.createElement('div');
-        item.className = `issue-item ${issue.severity}`;
-        item.innerHTML = `
-          <div style="display:flex; justify-content:space-between;">
-            <span class="issue-code">${issue.rule_id}</span>
-            <span style="font-size:10px; text-transform:uppercase;">${issue.severity}</span>
-          </div>
-          <div>${issue.message}</div>
-          <div style="color:#94a3b8; font-size:10.5px;">💡 ${issue.suggestion}</div>
-        `;
-        el.linterIssuesList.appendChild(item);
-      });
-    }
-  }
-
-  function renderDiff(diffText) {
-    el.diffContainer.innerHTML = '';
-    const lines = diffText.split('\n');
-    lines.forEach(line => {
-      const lineDiv = document.createElement('div');
-      lineDiv.className = 'diff-line';
-      if (line.startsWith('+') && !line.startsWith('+++')) {
-        lineDiv.classList.add('add');
-      } else if (line.startsWith('-') && !line.startsWith('---')) {
-        lineDiv.classList.add('del');
-      } else if (line.startsWith('@@') || line.startsWith('---') || line.startsWith('+++')) {
-        lineDiv.classList.add('header');
-      }
-      lineDiv.textContent = line || ' ';
-      el.diffContainer.appendChild(lineDiv);
-    });
-  }
-
-  function appendTerminal(type, text, attempt = 1, targetWsId = activeWorkspaceId) {
-    const line = document.createElement('div');
-    line.className = `terminal-line ${type}`;
-
-    if (type === 'status') {
-      line.textContent = `[STATUS] ${text} (attempt ${attempt})`;
-    } else if (type === 'thought') {
-      line.textContent = `💭 [THOUGHT] ${text}`;
-    } else if (type === 'token') {
-      line.textContent = text;
-    } else if (type === 'error') {
-      line.textContent = `❌ [ERROR] ${text}`;
-    } else {
-      line.textContent = text;
-    }
-
-    const state = getOrCreateWorkspaceState(targetWsId);
-    if (targetWsId === activeWorkspaceId) {
-      el.terminalOutput.appendChild(line);
-      el.terminalOutput.scrollTop = el.terminalOutput.scrollHeight;
-      state.terminalHtml = el.terminalOutput.innerHTML;
-    } else {
-      state.terminalHtml += line.outerHTML;
-    }
-  }
-
-  // --- Workspace Tabs & Context Rendering ---
   function renderWorkspaceTabs() {
     el.workspaceTabs.innerHTML = '';
     workspaces.forEach(ws => {
       const btn = document.createElement('button');
       btn.type = 'button';
-      btn.className = `ws-tab ${ws.id === activeWorkspaceId ? 'active' : ''} ${ws.is_self ? 'self' : ''}`;
-      btn.setAttribute('role', 'tab');
-      btn.setAttribute('aria-selected', ws.id === activeWorkspaceId ? 'true' : 'false');
-      btn.setAttribute('data-ws-id', ws.id);
-
-      const label = document.createElement('span');
-      label.textContent = ws.name || ws.id;
-      btn.appendChild(label);
-
-      if (ws.is_self) {
-        const badge = document.createElement('span');
-        badge.className = 'ws-badge self';
-        badge.textContent = 'SELF';
-        btn.appendChild(badge);
-      }
-
-      btn.addEventListener('click', () => switchWorkspace(ws.id));
+      btn.className = `ws-tab ${ws.project_id === activeWorkspaceId ? 'active' : ''}`;
+      btn.dataset.id = ws.project_id;
+      btn.innerHTML = `
+        <span>${escapeHtml(ws.name || ws.project_id)}</span>
+        ${ws.is_self ? '<span class="ws-tab-badge">SELF</span>' : ''}
+      `;
+      btn.addEventListener('click', () => switchWorkspace(ws.project_id));
       el.workspaceTabs.appendChild(btn);
     });
   }
 
-  function saveCurrentWorkspaceState() {
-    if (!activeWorkspaceId) return;
-    const state = getOrCreateWorkspaceState(activeWorkspaceId);
-    state.userPrompt = el.userPromptInput.value;
-    state.systemPrompt = el.systemPromptInput.value;
-    state.providerId = el.providerSelect.value;
-    state.model = el.modelSelect.value;
-    state.terminalHtml = el.terminalOutput.innerHTML;
-    state.diffHtml = el.diffContainer.innerHTML;
-    state.taskStatus = el.taskStatusBadge.textContent;
-    state.taskStatusColor = el.taskStatusBadge.style.color;
-    state.statTokens = el.statTokens.textContent;
-    state.statDuration = el.statDuration.textContent;
-  }
+  function renderChatSessionsList() {
+    const filter = el.chatSearchInput.value.trim().toLowerCase();
+    const filtered = workspaceSessions.filter(s =>
+      !filter || (s.title && s.title.toLowerCase().includes(filter))
+    );
 
-  async function switchWorkspace(wsId) {
-    if (wsId === activeWorkspaceId && workspaceStateStore[wsId]?.manifest) {
+    el.chatSessionsList.innerHTML = '';
+    if (filtered.length === 0) {
+      const empty = document.createElement('div');
+      empty.className = 'sessions-empty';
+      empty.textContent = filter ? 'No matching chats found.' : 'No chats yet in this workspace. Click "+ New Chat" above!';
+      el.chatSessionsList.appendChild(empty);
       return;
     }
 
-    // Save previous active state
-    saveCurrentWorkspaceState();
+    filtered.forEach(session => {
+      const item = document.createElement('div');
+      item.className = `session-item ${session.id === activeSessionId ? 'active' : ''}`;
+      item.dataset.id = session.id;
 
-    activeWorkspaceId = wsId;
-    const wsInfo = workspaces.find(w => w.id === wsId) || { id: wsId, name: wsId };
-    const state = getOrCreateWorkspaceState(wsId, wsInfo);
+      const totalTok = session.telemetry?.total_tokens || 0;
+      const msgCount = session.message_count || 0;
 
-    // Update Tab UI
-    document.querySelectorAll('.ws-tab').forEach(t => {
-      const isCurrent = t.getAttribute('data-ws-id') === wsId;
-      t.classList.toggle('active', isCurrent);
-      t.setAttribute('aria-selected', isCurrent ? 'true' : 'false');
+      item.innerHTML = `
+        <div class="session-item-content">
+          <div class="session-item-title">${escapeHtml(session.title || 'Untitled Session')}</div>
+          <div class="session-item-meta">
+            <span>${formatRelativeTime(session.updated_at || session.created_at)}</span>
+            <span class="session-item-badge">${msgCount} msg${msgCount === 1 ? '' : 's'}</span>
+            ${totalTok > 0 ? `<span class="session-item-badge">${formatTokens(totalTok)} tok</span>` : ''}
+          </div>
+        </div>
+        <button type="button" class="session-item-delete" title="Delete Session" aria-label="Delete Session">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="3 6 5 6 21 6"></polyline>
+            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+          </svg>
+        </button>
+      `;
+
+      // Click to select session
+      item.addEventListener('click', (e) => {
+        if (e.target.closest('.session-item-delete')) return;
+        selectChatSession(session.id);
+      });
+
+      // Click delete
+      const delBtn = item.querySelector('.session-item-delete');
+      delBtn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        if (confirm(`Delete chat "${session.title}"?`)) {
+          await deleteSession(session.id);
+        }
+      });
+
+      el.chatSessionsList.appendChild(item);
     });
-
-    // Update Context Card
-    el.wsActiveName.textContent = wsInfo.name || wsId;
-    el.wsActiveId.textContent = `#${wsId}`;
-    el.wsActivePath.textContent = wsInfo.root_path || 'resolving...';
-    el.wsBadgeSelf.style.display = wsInfo.is_self ? 'inline-block' : 'none';
-    el.wsMetaRuntime.textContent = wsInfo.runtime || 'custom';
-    el.wsMetaTest.textContent = wsInfo.test_command || 'no test spec';
-    el.statWorkspaceLabel.textContent = `${wsInfo.name || wsId} (${wsInfo.is_self ? 'Self' : wsId})`;
-
-    // Restore Prompt Studio & Execution Pane
-    el.userPromptInput.value = state.userPrompt;
-    el.systemPromptInput.value = state.systemPrompt;
-    if (state.providerId && Array.from(el.providerSelect.options).some(o => o.value === state.providerId)) {
-      el.providerSelect.value = state.providerId;
-    }
-    updateProviderUI();
-    if (state.model) el.modelSelect.value = state.model;
-
-    el.terminalOutput.innerHTML = state.terminalHtml;
-    el.diffContainer.innerHTML = state.diffHtml;
-    el.rawJsonOutput.textContent = state.rawEvents.length > 0 ? JSON.stringify(state.rawEvents, null, 2) : '';
-    el.taskStatusBadge.textContent = state.taskStatus;
-    el.taskStatusBadge.style.color = state.taskStatusColor;
-    el.statTokens.textContent = state.statTokens;
-    el.statDuration.textContent = state.statDuration;
-
-    triggerLint();
-
-    // Load detailed context & tree in background
-    loadWorkspaceContextAndTree(wsId);
   }
 
-  async function loadWorkspaceContextAndTree(wsId) {
-    const state = getOrCreateWorkspaceState(wsId);
-
-    // 1. Fetch details
-    if (!state.manifest) {
-      el.inspectorManifestJson.textContent = 'Loading manifest and context summaries...';
-      const details = await API.fetchWorkspaceDetails(wsId);
-      if (details) {
-        state.manifest = details.manifest;
-        state.contextSummaries = details.context_summaries || {};
-        if (details.root_path) el.wsActivePath.textContent = details.root_path;
-      }
+  function updateSessionTelemetryBar() {
+    if (!activeSessionData) {
+      el.sessionTitle.textContent = 'New Chat';
+      el.sessionWorkspaceTag.textContent = `#${activeWorkspaceId}`;
+      el.sessionStatTokens.textContent = '0';
+      el.sessionStatCost.textContent = '$0.000';
+      el.sessionStatTurns.textContent = '0';
+      return;
     }
 
-    if (activeWorkspaceId === wsId && state.manifest) {
-      el.inspectorManifestJson.textContent = JSON.stringify(state.manifest, null, 2);
+    el.sessionTitle.textContent = activeSessionData.title || 'Untitled Chat';
+    el.sessionWorkspaceTag.textContent = `#${activeSessionData.project_id || activeWorkspaceId}`;
 
-      // Context Chips
+    const tel = activeSessionData.telemetry || {};
+    const totalTokens = tel.total_tokens || 0;
+    const inTokens = tel.total_input_tokens || 0;
+    const outTokens = tel.total_output_tokens || 0;
+    const reasoningTokens = tel.total_reasoning_tokens || 0;
+
+    el.sessionStatTokens.textContent = formatTokens(totalTokens);
+    el.sessionStatTokens.parentElement.title = `Total: ${totalTokens} (In: ${inTokens} · Out: ${outTokens} · Reasoning: ${reasoningTokens})`;
+    el.sessionStatCost.textContent = formatCost(tel.total_cost_usd || 0);
+    el.sessionStatTurns.textContent = String(activeSessionData.messages ? activeSessionData.messages.length : (activeSessionData.message_count || 0));
+
+    // Align provider & model select
+    if (activeSessionData.provider_id && el.providerSelect.querySelector(`option[value="${activeSessionData.provider_id}"]`)) {
+      el.providerSelect.value = activeSessionData.provider_id;
+      updateProvidersUI();
+    }
+    if (activeSessionData.model_name && activeSessionData.model_name !== 'default') {
+      el.modelSelect.value = activeSessionData.model_name;
+    }
+  }
+
+  function renderMessagesThread() {
+    el.messagesInner.innerHTML = '';
+    const messages = activeSessionData?.messages || [];
+
+    if (messages.length === 0) {
+      el.messagesInner.appendChild(el.chatWelcome);
+      return;
+    }
+
+    messages.forEach(msg => {
+      const turnDiv = createMessageElement(msg);
+      el.messagesInner.appendChild(turnDiv);
+    });
+
+    scrollToBottom();
+  }
+
+  function createMessageElement(msg) {
+    const isUser = msg.role === 'user';
+    const turnDiv = document.createElement('div');
+    turnDiv.className = `message-turn ${isUser ? 'user' : 'assistant'}`;
+    turnDiv.id = `msg-${msg.id}`;
+
+    if (isUser) {
+      turnDiv.innerHTML = `
+        <div class="msg-avatar" title="You">U</div>
+        <div class="msg-body-wrapper">
+          <div class="msg-bubble">
+            <div class="msg-text-content">${escapeHtml(msg.content)}</div>
+          </div>
+          <span style="font-size:10.5px; color:#64748b;">${formatRelativeTime(msg.created_at)}</span>
+        </div>
+      `;
+      return turnDiv;
+    }
+
+    // Assistant Message with rich collapsible inspector
+    const meta = msg.metadata || {};
+    const status = msg.status || meta.extensions?.status || 'completed';
+    const contextItems = meta.context_items || [];
+    const thoughts = meta.thoughts || [];
+    const plan = meta.plan || null;
+    const toolCalls = meta.tool_calls || [];
+    const logs = meta.logs || [];
+    const usage = msg.usage || {};
+    const runInfo = meta.extensions || {};
+
+    let inspectorHtml = '';
+
+    // 1. Context items accordion
+    if (contextItems.length > 0) {
+      const itemsList = contextItems.map(c => `
+        <div class="context-file-card">
+          <span>📄 ${escapeHtml(c.label || c.path || c.kind)}</span>
+          <span style="color:#64748b;">~${Math.round((c.content || '').length / 4)} tokens</span>
+        </div>
+      `).join('');
+
+      inspectorHtml += `
+        <div class="inspector-tray" id="tray-context-${msg.id}">
+          <button type="button" class="inspector-tray-toggle">
+            <span>📁 Injected Project Context (${contextItems.length} files)</span>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"></polyline></svg>
+          </button>
+          <div class="inspector-tray-body">
+            <div class="context-items-list">${itemsList}</div>
+          </div>
+        </div>
+      `;
+    }
+
+    // 2. Thoughts / Reasoning accordion
+    if (thoughts.length > 0) {
+      const thoughtSteps = thoughts.map(t => `
+        <div class="thought-step-card">
+          <strong>🧠 Thought:</strong>
+          <div>${escapeHtml(t.text)}</div>
+        </div>
+      `).join('');
+
+      inspectorHtml += `
+        <div class="inspector-tray" id="tray-thoughts-${msg.id}">
+          <button type="button" class="inspector-tray-toggle">
+            <span>🧠 Reasoning &amp; Internal Thoughts (${thoughts.length} step${thoughts.length === 1 ? '' : 's'})</span>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"></polyline></svg>
+          </button>
+          <div class="inspector-tray-body">
+            ${thoughtSteps}
+          </div>
+        </div>
+      `;
+    }
+
+    // 3. Execution plan accordion
+    if (plan && plan.steps && plan.steps.length > 0) {
+      const stepRows = plan.steps.map(s => `
+        <div class="plan-step-row">
+          <span class="step-status-icon ${s.status}">${s.status === 'done' ? '✓' : s.status === 'in_progress' ? '●' : '○'}</span>
+          <span>${escapeHtml(s.title)}</span>
+        </div>
+      `).join('');
+
+      inspectorHtml += `
+        <div class="inspector-tray open" id="tray-plan-${msg.id}">
+          <button type="button" class="inspector-tray-toggle">
+            <span>📋 Execution Plan: ${escapeHtml(plan.summary || 'Step-by-step')}</span>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"></polyline></svg>
+          </button>
+          <div class="inspector-tray-body">
+            <div class="plan-container">${stepRows}</div>
+          </div>
+        </div>
+      `;
+    }
+
+    // 4. Tool calls & logs accordion
+    if (toolCalls.length > 0 || logs.length > 0) {
+      const toolRows = toolCalls.map(tc => `
+        <div style="margin-bottom:6px; font-family:var(--font-mono);">
+          <strong style="color:var(--accent-cyan);">🔧 ${escapeHtml(tc.name)}</strong>
+          <pre style="background:rgba(0,0,0,0.4); padding:6px; border-radius:4px; font-size:10.5px; margin-top:2px;">${escapeHtml(JSON.stringify(tc.args, null, 2))}</pre>
+          ${tc.result ? `<div style="color:#10b981; font-size:10.5px; margin-top:2px;">Result: ${escapeHtml(typeof tc.result === 'string' ? tc.result : JSON.stringify(tc.result))}</div>` : ''}
+        </div>
+      `).join('');
+
+      const logRows = logs.map(l => `
+        <div style="font-family:var(--font-mono); font-size:10.5px; color:#94a3b8;">
+          [${escapeHtml(l.stream)}] ${escapeHtml(l.text)}
+        </div>
+      `).join('');
+
+      inspectorHtml += `
+        <div class="inspector-tray" id="tray-tools-${msg.id}">
+          <button type="button" class="inspector-tray-toggle">
+            <span>🔧 Tool Executions &amp; Runtime Logs (${toolCalls.length + logs.length} events)</span>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"></polyline></svg>
+          </button>
+          <div class="inspector-tray-body">
+            ${toolRows}
+            ${logRows}
+          </div>
+        </div>
+      `;
+    }
+
+    // Turn telemetry footer
+    const latencyStr = usage.latency_ms ? `${usage.latency_ms}ms` : null;
+    const tokensStr = usage.total_tokens ? `${usage.total_tokens} tokens` : null;
+    const costStr = usage.cost_usd ? formatCost(usage.cost_usd) : null;
+
+    turnDiv.innerHTML = `
+      <div class="msg-avatar" title="Vibe Agent">⚡</div>
+      <div class="msg-body-wrapper" style="width:100%;">
+        <div class="msg-bubble">
+          <div class="msg-header">
+            <span class="msg-model-tag">${escapeHtml(runInfo.model || 'assistant')}</span>
+            <span class="msg-status-pill ${status}">
+              ${status === 'streaming' ? '<span class="badge-dot active pulse"></span> Generating...' : status === 'completed' ? '✓ Completed' : status === 'cancelled' ? '⚠ Cancelled' : '✕ Error'}
+            </span>
+          </div>
+
+          ${inspectorHtml ? `<div class="msg-inspector">${inspectorHtml}</div>` : ''}
+
+          <div class="msg-text-content" id="msg-content-${msg.id}">
+            ${formatMarkdown(msg.content)}
+          </div>
+
+          ${(latencyStr || tokensStr || costStr) ? `
+            <div class="msg-telemetry-footer">
+              ${latencyStr ? `<span>⏱ ${latencyStr}</span>` : ''}
+              ${tokensStr ? `<span>🪙 ${tokensStr}</span>` : ''}
+              ${costStr ? `<span>💵 ${costStr}</span>` : ''}
+            </div>
+          ` : ''}
+        </div>
+      </div>
+    `;
+
+    // Attach collapsible tray toggle handlers
+    turnDiv.querySelectorAll('.inspector-tray-toggle').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const tray = btn.closest('.inspector-tray');
+        tray.classList.toggle('open');
+      });
+    });
+
+    return turnDiv;
+  }
+
+  function scrollToBottom() {
+    el.messagesContainer.scrollTop = el.messagesContainer.scrollHeight;
+  }
+
+  // --- Workspace & Session Transitions ---
+  async function switchWorkspace(workspaceId) {
+    if (activeWorkspaceId === workspaceId && workspaceSessions.length > 0) return;
+    activeWorkspaceId = workspaceId;
+
+    renderWorkspaceTabs();
+
+    // Update Drawer info for active workspace
+    const ws = workspaces.find(w => w.project_id === workspaceId);
+    if (ws) {
+      el.drawerWsName.textContent = ws.name || ws.project_id;
+      el.wsActivePath.textContent = ws.root_path || '';
+      el.wsMetaRuntime.textContent = ws.runtime || 'python:3.10';
+      el.wsMetaTest.textContent = ws.test_command || 'pytest';
+      el.inspectorManifestJson.textContent = ws.manifest ? JSON.stringify(ws.manifest, null, 2) : 'No manifest.yaml found';
+
+      // Load files and tree
       el.inspectorContextChips.innerHTML = '';
-      const contextFiles = state.manifest.context_files || [];
-      if (contextFiles.length === 0) {
-        el.inspectorContextChips.innerHTML = '<span style="color:#64748b; font-size:11px;">No context files defined in manifest.</span>';
-        el.inspectorDocPreview.textContent = 'No context files configured.';
-      } else {
-        contextFiles.forEach((file, idx) => {
-          const chip = document.createElement('button');
-          chip.type = 'button';
-          chip.className = `btn-chip ${idx === 0 ? 'active' : ''}`;
-          chip.textContent = `📄 ${file}`;
-          chip.addEventListener('click', () => {
-            document.querySelectorAll('#inspector-context-chips .btn-chip').forEach(c => c.classList.remove('active'));
-            chip.classList.add('active');
-            renderDocPreview(file, state.contextSummaries[file]);
-          });
-          el.inspectorContextChips.appendChild(chip);
+      (ws.context_files || []).forEach(file => {
+        const chip = document.createElement('button');
+        chip.type = 'button';
+        chip.className = 'inspector-chip';
+        chip.textContent = file;
+        chip.addEventListener('click', () => {
+          el.inspectorDocPreview.textContent = `Context file: ${file}\nInjected automatically into LLM system prompt for workspace [${ws.name}].`;
         });
+        el.inspectorContextChips.appendChild(chip);
+      });
 
-        // Preview first file by default
-        renderDocPreview(contextFiles[0], state.contextSummaries[contextFiles[0]]);
-      }
+      API.fetchWorkspaceTree(workspaceId).then(data => {
+        el.inspectorTreeView.textContent = (data.tree || []).join('\n');
+      });
     }
 
-    // 2. Fetch Tree
-    if (!state.tree || state.tree.length === 0) {
-      el.inspectorTreeView.textContent = 'Scanning directory tree...';
-      const treeData = await API.fetchWorkspaceTree(wsId);
-      if (Array.isArray(treeData.tree)) {
-        state.tree = treeData.tree;
-      } else if (treeData && (treeData.children || treeData.name)) {
-        state.tree = [
-          `📁 ${treeData.name || wsId}/`,
-          ...formatTreeNode(treeData, '')
-        ];
-      } else {
-        state.tree = ['[Empty directory or no files]'];
-      }
-    }
-
-    if (activeWorkspaceId === wsId) {
-      el.inspectorTreeView.textContent = state.tree.length > 0 ? state.tree.join('\n') : 'Empty directory or all files ignored.';
-    }
+    // Load workspace chat sessions
+    await loadWorkspaceChats(workspaceId);
   }
 
-  function formatTreeNode(node, prefix = '') {
-    if (!node || !node.children) return [];
-    const lines = [];
-    const children = node.children || [];
-    children.forEach((child, idx) => {
-      const isLast = idx === children.length - 1;
-      const branch = isLast ? '└── ' : '├── ';
-      const icon = child.type === 'directory' ? '📁 ' : '📄 ';
-      lines.push(prefix + branch + icon + child.name);
-      if (child.children && child.children.length > 0) {
-        lines.push(...formatTreeNode(child, prefix + (isLast ? '    ' : '│   ')));
-      }
-    });
-    return lines;
-  }
+  async function loadWorkspaceChats(workspaceId) {
+    el.chatSessionsList.innerHTML = '<div class="sessions-empty">Loading conversations...</div>';
+    workspaceSessions = await API.fetchWorkspaceChats(workspaceId);
+    renderChatSessionsList();
 
-  function renderDocPreview(filename, content) {
-    if (!content) {
-      el.inspectorDocPreview.textContent = `[File: ${filename}] (Empty or not found)`;
+    if (workspaceSessions.length > 0) {
+      // Pick first session
+      await selectChatSession(workspaceSessions[0].id);
     } else {
-      el.inspectorDocPreview.textContent = `--- ${filename} ---\n` + content;
+      // Auto-create initial chat for the workspace
+      await createNewChat();
     }
   }
 
-  // --- Modal Logic ---
-  function openModal() {
-    el.modalAddWorkspace.style.display = 'flex';
-    el.modalAddWorkspace.setAttribute('aria-hidden', 'false');
-    el.modalError.style.display = 'none';
-    el.modalError.textContent = '';
+  async function selectChatSession(sessionId) {
+    if (activeSessionId === sessionId && activeSessionData) return;
+    activeSessionId = sessionId;
+    renderChatSessionsList();
+
+    try {
+      activeSessionData = await API.fetchChatSession(sessionId);
+      updateSessionTelemetryBar();
+      renderMessagesThread();
+    } catch (err) {
+      console.error(`Failed to load chat session ${sessionId}:`, err);
+    }
+  }
+
+  async function createNewChat() {
+    try {
+      const ws = workspaces.find(w => w.project_id === activeWorkspaceId);
+      const title = `New Chat in ${ws?.name || activeWorkspaceId}`;
+      const providerId = el.providerSelect.value || 'fake';
+      const model = el.modelSelect.value || undefined;
+
+      const created = await API.createChat(activeWorkspaceId, title, providerId, model);
+      workspaceSessions.unshift(created);
+      renderChatSessionsList();
+      await selectChatSession(created.id);
+    } catch (err) {
+      console.error('Failed to create new chat:', err);
+    }
+  }
+
+  async function deleteSession(sessionId) {
+    try {
+      await API.deleteChat(sessionId);
+      workspaceSessions = workspaceSessions.filter(s => s.id !== sessionId);
+      renderChatSessionsList();
+      if (activeSessionId === sessionId) {
+        if (workspaceSessions.length > 0) {
+          await selectChatSession(workspaceSessions[0].id);
+        } else {
+          await createNewChat();
+        }
+      }
+    } catch (err) {
+      console.error(`Failed to delete chat session ${sessionId}:`, err);
+    }
+  }
+
+  async function renameActiveSession() {
+    if (!activeSessionId) return;
+    const currentTitle = el.sessionTitle.textContent;
+    const newTitle = prompt('Enter new session title:', currentTitle);
+    if (!newTitle || newTitle.trim() === '' || newTitle.trim() === currentTitle) return;
+
+    try {
+      const updated = await API.renameChat(activeSessionId, newTitle.trim());
+      if (activeSessionData) activeSessionData.title = updated.title;
+      const found = workspaceSessions.find(s => s.id === activeSessionId);
+      if (found) found.title = updated.title;
+      updateSessionTelemetryBar();
+      renderChatSessionsList();
+    } catch (err) {
+      console.error('Failed to rename session:', err);
+    }
+  }
+
+  // --- Sending Message & Streaming WebSocket Execution ---
+  async function handleSendTurn() {
+    const userPrompt = el.userPromptInput.value.trim();
+    if (!userPrompt || !activeSessionId) return;
+
+    const systemPrompt = el.systemPromptInput.value.trim();
+    const providerId = el.providerSelect.value || 'fake';
+    const model = el.modelSelect.value || undefined;
+
+    // Reset input
+    el.userPromptInput.value = '';
+    el.userPromptInput.style.height = 'auto';
+
+    // UI state: running
+    el.btnExecute.style.display = 'none';
+    el.btnStop.style.display = 'inline-flex';
+
+    try {
+      const response = await API.sendChatMessage(activeSessionId, {
+        user_prompt: userPrompt,
+        system_instructions: systemPrompt,
+        provider_id: providerId,
+        model: model
+      });
+
+      // Append user message immediately
+      if (!activeSessionData.messages) activeSessionData.messages = [];
+      activeSessionData.messages.push(response.user_message);
+
+      // Append assistant streaming placeholder
+      const assistantMsg = response.assistant_message;
+      activeSessionData.messages.push(assistantMsg);
+      renderMessagesThread();
+
+      // Connect WebSocket to stream
+      connectTurnWebSocket(activeSessionId, response.message_id, response.cursor || 0);
+
+    } catch (err) {
+      console.error('Failed to start turn:', err);
+      alert(`Execution error: ${err.message}`);
+      el.btnExecute.style.display = 'inline-flex';
+      el.btnStop.style.display = 'none';
+    }
+  }
+
+  function connectTurnWebSocket(sessionId, messageId, cursor = 0) {
+    if (activeWebSocket) {
+      activeWebSocket.close();
+      activeWebSocket = null;
+    }
+
+    activeStreamMessageId = messageId;
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const wsUrl = `${protocol}//${window.location.host}/api/chats/${encodeURIComponent(sessionId)}/events?cursor=${cursor}&message_id=${encodeURIComponent(messageId)}`;
+
+    const socket = new WebSocket(wsUrl);
+    activeWebSocket = socket;
+
+    socket.onmessage = (event) => {
+      try {
+        const msg = JSON.parse(event.data);
+        handleStreamEvent(msg, messageId);
+      } catch (err) {
+        console.error('Error handling WebSocket message:', err);
+      }
+    };
+
+    socket.onerror = (err) => {
+      console.warn('Chat WebSocket error:', err);
+    };
+
+    socket.onclose = () => {
+      if (activeWebSocket === socket) {
+        activeWebSocket = null;
+      }
+      el.btnExecute.style.display = 'inline-flex';
+      el.btnStop.style.display = 'none';
+    };
+  }
+
+  function handleStreamEvent(event, messageId) {
+    const type = event.type;
+    const data = event.data || {};
+
+    const msgElement = document.getElementById(`msg-${messageId}`);
+    const contentElement = document.getElementById(`msg-content-${messageId}`);
+
+    if (type === 'token') {
+      const token = data.text || '';
+      if (contentElement) {
+        contentElement.innerHTML += escapeHtml(token);
+        scrollToBottom();
+      }
+    } else if (type === 'thought') {
+      // Thought received
+      console.log('Thought step:', data.text);
+    } else if (type === 'done') {
+      // Finished!
+      if (msgElement) {
+        const pill = msgElement.querySelector('.msg-status-pill');
+        if (pill) {
+          pill.className = 'msg-status-pill completed';
+          pill.textContent = '✓ Completed';
+        }
+      }
+      el.btnExecute.style.display = 'inline-flex';
+      el.btnStop.style.display = 'none';
+
+      // Refresh full session from server to capture updated tokens & DB state
+      API.fetchChatSession(activeSessionId).then(session => {
+        activeSessionData = session;
+        updateSessionTelemetryBar();
+        renderChatSessionsList();
+      });
+
+    } else if (type === 'error') {
+      if (msgElement) {
+        const pill = msgElement.querySelector('.msg-status-pill');
+        if (pill) {
+          pill.className = 'msg-status-pill error';
+          pill.textContent = '✕ Error';
+        }
+      }
+      el.btnExecute.style.display = 'inline-flex';
+      el.btnStop.style.display = 'none';
+    }
+  }
+
+  async function handleStopTurn() {
+    if (!activeSessionId) return;
+    try {
+      if (activeWebSocket && activeWebSocket.readyState === WebSocket.OPEN) {
+        activeWebSocket.send(JSON.stringify({ action: 'cancel' }));
+      }
+      await API.cancelChatTurn(activeSessionId);
+    } catch (err) {
+      console.error('Cancel turn error:', err);
+    }
+  }
+
+  // --- Prompt Linter Debouncer ---
+  function triggerPromptLint() {
+    clearTimeout(lintDebounceTimer);
+    lintDebounceTimer = setTimeout(async () => {
+      const prompt = el.userPromptInput.value.trim();
+      const system = el.systemPromptInput.value.trim();
+      if (!prompt) {
+        el.lintScoreVal && (el.lintScoreVal.textContent = '100');
+        el.tokenEstimateBadge.textContent = '~0 tokens';
+        el.lintScoreBadge.className = 'linter-pill good';
+        return;
+      }
+      const report = await API.lintPrompt(prompt, system);
+      if (report) {
+        const score = report.score || 100;
+        el.lintScoreText.textContent = `Quality: ${score}`;
+        el.tokenEstimateBadge.textContent = `~${report.token_estimate || 0} tokens`;
+        el.lintScoreBadge.className = 'linter-pill ' + (score >= 80 ? 'good' : score >= 50 ? 'warn' : 'bad');
+      }
+    }, 300);
+  }
+
+  // --- Modal: Register Target Workspace ---
+  function openAddWorkspaceModal() {
     el.wsInputPath.value = '';
     el.wsInputId.value = '';
     el.wsInputName.value = '';
+    el.modalError.style.display = 'none';
+    el.modalAddWorkspace.style.display = 'flex';
     el.wsInputPath.focus();
   }
 
-  function closeModal() {
+  function closeAddWorkspaceModal() {
     el.modalAddWorkspace.style.display = 'none';
-    el.modalAddWorkspace.setAttribute('aria-hidden', 'true');
   }
 
-  async function handleConfirmAddWorkspace() {
+  async function submitAddWorkspace() {
     const path = el.wsInputPath.value.trim();
-    const id = el.wsInputId.value.trim() || undefined;
-    const name = el.wsInputName.value.trim() || undefined;
-    const persist = el.wsInputPersist.checked;
-
     if (!path) {
-      el.modalError.textContent = 'Please enter a target directory path.';
+      el.modalError.textContent = 'Target directory path is required.';
       el.modalError.style.display = 'block';
       return;
     }
-
-    el.btnConfirmAddWs.disabled = true;
-    el.btnConfirmAddWs.textContent = 'Registering...';
-    el.modalError.style.display = 'none';
+    const payload = {
+      path,
+      project_id: el.wsInputId.value.trim() || undefined,
+      name: el.wsInputName.value.trim() || undefined,
+      persist_manifest: el.wsInputPersist.checked
+    };
 
     try {
-      const res = await API.registerWorkspace({
-        path: path,
-        project_id: id,
-        name: name,
-        persist_manifest: persist
-      });
+      el.btnConfirmAddWs.disabled = true;
+      el.btnConfirmAddWs.textContent = 'Registering...';
+      const registered = await API.registerWorkspace(payload);
+      closeAddWorkspaceModal();
 
-      const raw = res.workspace || res;
-      const registered = {
-        id: raw.project_id || raw.id,
-        project_id: raw.project_id || raw.id,
-        name: raw.name,
-        root_path: raw.root_path,
-        is_self: Boolean(raw.is_self),
-        manifest: raw.manifest,
-        runtime: raw.manifest?.runtime || 'custom',
-        version: raw.manifest?.version || '0.1.0',
-        test_command: raw.manifest?.test_command || null,
-        context_files: raw.manifest?.context_files || []
-      };
-
-      // Replace or append
-      const existingIdx = workspaces.findIndex(w => w.id === registered.id);
-      if (existingIdx >= 0) {
-        workspaces[existingIdx] = registered;
-      } else {
-        workspaces.push(registered);
-      }
-
+      // Refresh workspaces
+      workspaces = await API.fetchWorkspaces();
       renderWorkspaceTabs();
-      closeModal();
-      await switchWorkspace(registered.id);
+      await switchWorkspace(registered.project_id || registered.id);
     } catch (err) {
-      el.modalError.textContent = err.message || 'Failed to register workspace.';
+      el.modalError.textContent = err.message || 'Failed to register target directory.';
       el.modalError.style.display = 'block';
     } finally {
       el.btnConfirmAddWs.disabled = false;
@@ -584,249 +986,103 @@
     }
   }
 
-  // --- Execution Workflow ---
-  async function runVibe() {
-    const wsId = activeWorkspaceId;
-    const wsState = getOrCreateWorkspaceState(wsId);
-    const providerId = el.providerSelect.value;
-    const userPrompt = el.userPromptInput.value.trim();
-    const systemPrompt = el.systemPromptInput.value.trim();
-    const model = el.modelSelect.value || null;
+  // --- Event Listeners Setup ---
+  function setupEventListeners() {
+    // Drawer toggle
+    el.btnToggleWsDrawer.addEventListener('click', () => {
+      el.wsDrawer.classList.toggle('open');
+    });
+    el.btnCloseWsDrawer.addEventListener('click', () => {
+      el.wsDrawer.classList.remove('open');
+    });
 
-    if (!userPrompt) {
-      alert('Please enter a prompt intention before executing.');
-      return;
-    }
+    // Chat sessions sidebar
+    el.btnNewChat.addEventListener('click', createNewChat);
+    el.chatSearchInput.addEventListener('input', renderChatSessionsList);
 
-    // Reset UI
-    el.btnExecute.disabled = true;
-    el.btnStop.disabled = false;
-    el.taskStatusBadge.textContent = 'RUNNING';
-    el.taskStatusBadge.style.color = 'var(--accent-cyan)';
-    el.terminalOutput.innerHTML = '';
-    el.diffContainer.innerHTML = '<div style="color:#64748b; padding:16px;">No artifacts generated yet...</div>';
-    el.rawJsonOutput.textContent = '';
+    // Title edit
+    el.sessionTitle.addEventListener('click', renameActiveSession);
+    el.btnEditTitle.addEventListener('click', renameActiveSession);
 
-    wsState.accumulatedOutput = '';
-    wsState.rawEvents = [];
-    wsState.taskStatus = 'RUNNING';
-    wsState.taskStatusColor = 'var(--accent-cyan)';
+    // Provider select
+    el.providerSelect.addEventListener('change', updateProvidersUI);
 
-    executionStartTime = Date.now();
-    timerInterval = setInterval(() => {
-      const elapsed = ((Date.now() - executionStartTime) / 1000).toFixed(1);
-      el.statDuration.textContent = `${elapsed}s`;
-      wsState.statDuration = `${elapsed}s`;
-    }, 100);
-
-    appendTerminal('status', `Connecting to execution engine for workspace [${wsId}]...`, 1, wsId);
-
-    // WebSocket Stream scoped to workspace
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${protocol}//${window.location.host}/api/workspaces/${encodeURIComponent(wsId)}/events`;
-
-    try {
-      socketTargetWsId = wsId;
-      activeSocket = new WebSocket(wsUrl);
-
-      activeSocket.onopen = () => {
-        appendTerminal('status', `Dispatched to [${providerId}] in workspace [${wsId}]`, 1, wsId);
-        activeSocket.send(JSON.stringify({
-          provider_id: providerId,
-          user_prompt: userPrompt,
-          system_instructions: systemPrompt,
-          model: model,
-          workspace_id: wsId
-        }));
-      };
-
-      activeSocket.onmessage = (event) => {
-        const frame = JSON.parse(event.data);
-        const targetState = getOrCreateWorkspaceState(socketTargetWsId);
-        targetState.rawEvents.push(frame);
-
-        if (socketTargetWsId === activeWorkspaceId) {
-          el.rawJsonOutput.textContent = JSON.stringify(targetState.rawEvents, null, 2);
-        }
-
-        if (frame.type === 'status') {
-          appendTerminal('status', frame.data?.state || 'in progress', frame.attempt, socketTargetWsId);
-        } else if (frame.type === 'thought') {
-          appendTerminal('thought', frame.data?.text || '', 1, socketTargetWsId);
-        } else if (frame.type === 'token') {
-          targetState.accumulatedOutput += frame.data?.text || '';
-          if (socketTargetWsId === activeWorkspaceId) {
-            let lastTokenLine = el.terminalOutput.querySelector('.token-stream-container');
-            if (!lastTokenLine) {
-              lastTokenLine = document.createElement('div');
-              lastTokenLine.className = 'terminal-line token-stream-container';
-              lastTokenLine.style.color = '#e2e8f0';
-              el.terminalOutput.appendChild(lastTokenLine);
-            }
-            lastTokenLine.textContent = targetState.accumulatedOutput;
-            el.terminalOutput.scrollTop = el.terminalOutput.scrollHeight;
-            targetState.terminalHtml = el.terminalOutput.innerHTML;
-          }
-        } else if (frame.type === 'artifact') {
-          if (frame.data?.inline_content) {
-            if (socketTargetWsId === activeWorkspaceId) {
-              renderDiff(frame.data.inline_content);
-              targetState.diffHtml = el.diffContainer.innerHTML;
-            } else {
-              targetState.diffHtml = `<pre class="diff-line header">${frame.data.name}</pre>`;
-            }
-          }
-          appendTerminal('status', `Artifact generated: ${frame.data?.name}`, 1, socketTargetWsId);
-        } else if (frame.type === 'usage') {
-          const promptT = frame.data?.prompt_tokens || 0;
-          const compT = frame.data?.completion_tokens || 0;
-          const usageStr = `${promptT + compT} (${promptT} in / ${compT} out)`;
-          targetState.statTokens = usageStr;
-          if (socketTargetWsId === activeWorkspaceId) {
-            el.statTokens.textContent = usageStr;
-          }
-        } else if (frame.type === 'done') {
-          finishExecution('SUCCEEDED', socketTargetWsId);
-        } else if (frame.type === 'error') {
-          appendTerminal('error', frame.data?.message || 'Unknown error', 1, socketTargetWsId);
-          finishExecution('FAILED', socketTargetWsId);
-        }
-      };
-
-      activeSocket.onerror = (err) => {
-        console.error('WebSocket error:', err);
-        appendTerminal('error', 'WebSocket connection failed.', 1, socketTargetWsId);
-        finishExecution('FAILED', socketTargetWsId);
-      };
-
-      activeSocket.onclose = () => {
-        const targetState = getOrCreateWorkspaceState(socketTargetWsId);
-        if (targetState.taskStatus === 'RUNNING') {
-          finishExecution('FINISHED', socketTargetWsId);
-        }
-      };
-
-    } catch (err) {
-      appendTerminal('error', `Failed to open socket: ${err}`, 1, wsId);
-      finishExecution('FAILED', wsId);
-    }
-  }
-
-  function finishExecution(status, wsId = activeWorkspaceId) {
-    if (timerInterval) clearInterval(timerInterval);
-    const targetState = getOrCreateWorkspaceState(wsId);
-    targetState.taskStatus = status;
-    targetState.taskStatusColor = status === 'SUCCEEDED' ? 'var(--accent-emerald)' : 'var(--accent-rose)';
-
-    if (wsId === activeWorkspaceId) {
-      el.taskStatusBadge.textContent = status;
-      el.taskStatusBadge.style.color = targetState.taskStatusColor;
-      el.btnExecute.disabled = false;
-      el.btnStop.disabled = true;
-    }
-
-    if (activeSocket) {
-      activeSocket.close();
-      activeSocket = null;
-      socketTargetWsId = null;
-    }
-  }
-
-  // --- Linter Debounce ---
-  let lintDebounce = null;
-  function triggerLint() {
-    clearTimeout(lintDebounce);
-    lintDebounce = setTimeout(async () => {
-      const report = await API.lintPrompt(el.userPromptInput.value, el.systemPromptInput.value);
-      renderLintReport(report);
-    }, 350);
-  }
-
-  // --- Event Listeners ---
-  function setupListeners() {
-    el.providerSelect.addEventListener('change', updateProviderUI);
-
-    // Preset buttons
+    // Presets
     document.querySelectorAll('.preset-btn').forEach(btn => {
-      btn.addEventListener('click', (e) => {
-        const key = e.target.getAttribute('data-preset');
-        if (PRESETS[key]) {
-          el.systemPromptInput.value = PRESETS[key].system;
-          el.userPromptInput.value = PRESETS[key].prompt;
-          triggerLint();
+      btn.addEventListener('click', () => {
+        const presetKey = btn.dataset.preset;
+        const preset = PRESETS[presetKey];
+        if (preset) {
+          el.userPromptInput.value = preset.prompt;
+          el.systemPromptInput.value = preset.system;
+          triggerPromptLint();
+          el.userPromptInput.focus();
         }
       });
     });
 
-    el.userPromptInput.addEventListener('input', triggerLint);
-    el.systemPromptInput.addEventListener('input', triggerLint);
-    el.btnLintPrompt.addEventListener('click', triggerLint);
-
-    // Action buttons
-    el.btnExecute.addEventListener('click', runVibe);
-    el.btnStop.addEventListener('click', () => finishExecution('CANCELLED', activeWorkspaceId));
-    el.btnClear.addEventListener('click', () => {
-      el.userPromptInput.value = '';
-      el.terminalOutput.innerHTML = '';
-      el.diffContainer.innerHTML = '';
-      const state = getOrCreateWorkspaceState(activeWorkspaceId);
-      state.terminalHtml = '';
-      state.diffHtml = '';
-      state.userPrompt = '';
-      triggerLint();
+    // System instructions drawer toggle
+    el.btnToggleSystem.addEventListener('click', () => {
+      const isCollapsed = el.systemInstructionsDrawer.classList.toggle('collapsed');
+      el.btnToggleSystem.setAttribute('aria-expanded', String(!isCollapsed));
     });
 
-    // Dashboard Tab switching (Live Console / Diff / Context / Raw)
-    document.querySelectorAll('.tab-btn').forEach(btn => {
-      btn.addEventListener('click', () => {
-        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-        document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
-
-        btn.classList.add('active');
-        const tabId = btn.getAttribute('data-tab');
-        const targetPane = document.getElementById(tabId);
-        if (targetPane) targetPane.classList.add('active');
-      });
+    // User prompt textarea input & Enter to send
+    el.userPromptInput.addEventListener('input', () => {
+      el.userPromptInput.style.height = 'auto';
+      el.userPromptInput.style.height = Math.min(el.userPromptInput.scrollHeight, 180) + 'px';
+      triggerPromptLint();
     });
 
-    // Modal controls
-    el.btnAddWorkspace.addEventListener('click', openModal);
-    el.btnCloseModal.addEventListener('click', closeModal);
-    el.btnCancelModal.addEventListener('click', closeModal);
-    el.btnConfirmAddWs.addEventListener('click', handleConfirmAddWorkspace);
-    el.modalAddWorkspace.addEventListener('click', (e) => {
-      if (e.target === el.modalAddWorkspace) closeModal();
+    el.userPromptInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        handleSendTurn();
+      }
     });
+
+    el.systemPromptInput.addEventListener('input', triggerPromptLint);
+
+    // Send and stop buttons
+    el.btnExecute.addEventListener('click', handleSendTurn);
+    el.btnStop.addEventListener('click', handleStopTurn);
+
+    // Add workspace modal
+    el.btnAddWorkspace.addEventListener('click', openAddWorkspaceModal);
+    el.btnCloseModal.addEventListener('click', closeAddWorkspaceModal);
+    el.btnCancelModal.addEventListener('click', closeAddWorkspaceModal);
+    el.btnConfirmAddWs.addEventListener('click', submitAddWorkspace);
   }
 
-  // --- App Initialization ---
+  // --- Bootstrap ---
   async function init() {
-    setupListeners();
+    setupEventListeners();
 
-    // 1. Fetch & Initialize Providers
-    providers = await API.fetchProviders();
+    // Load providers and workspaces in parallel
+    const [fetchedProviders, fetchedWorkspaces] = await Promise.all([
+      API.fetchProviders(),
+      API.fetchWorkspaces()
+    ]);
+
+    providers = fetchedProviders;
+    workspaces = fetchedWorkspaces;
+
+    // Populate providers in selector
     el.providerSelect.innerHTML = '';
     providers.forEach(p => {
       const opt = document.createElement('option');
       opt.value = p.id;
-      opt.textContent = `${p.display_name} (${p.kind})`;
-      if (p.state !== 'ready') opt.textContent += ` [${p.state}]`;
+      opt.textContent = `${p.display_name} (${p.state})`;
+      if (!p.enabled || p.state !== 'ready') opt.disabled = true;
       el.providerSelect.appendChild(opt);
     });
-    updateProviderUI();
 
-    // 2. Fetch & Initialize Workspaces
-    workspaces = await API.fetchWorkspaces();
+    updateProvidersUI();
     renderWorkspaceTabs();
 
-    // 3. Switch to default workspace (Self / root)
-    const initialWs = workspaces.find(w => w.is_self) || workspaces[0];
-    if (initialWs) {
-      await switchWorkspace(initialWs.id);
-    } else {
-      triggerLint();
-    }
+    // Default to 'root' workspace
+    await switchWorkspace('root');
   }
 
-  window.addEventListener('DOMContentLoaded', init);
+  document.addEventListener('DOMContentLoaded', init);
 })();

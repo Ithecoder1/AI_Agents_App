@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Vibe Forge — Multi-Provider Agent Execution Engine</title>
-  <meta name="description" content="Author vibe-coding prompts and execute them across AI agent backends with real-time streaming, multi-workspace sandboxing, and quality validation." />
+  <title>Vibe Forge — Multi-Provider Agent Execution Engine &amp; Chat Studio</title>
+  <meta name="description" content="Author vibe-coding prompts and execute multi-turn agent conversations across LLM backends with SQLite session history, live streaming telemetry, and per-message inspection." />
   
   <!-- Typography: Inter & JetBrains Mono -->
   <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -25,7 +25,7 @@
       </div>
       <div class="brand-title-group" id="brand-title-group">
         <h1 id="app-title">Vibe Forge</h1>
-        <p id="app-subtitle">Autonomous Meta-Agent Studio</p>
+        <p id="app-subtitle">Autonomous Meta-Agent Studio &amp; Multi-Turn Chat</p>
       </div>
     </div>
 
@@ -49,63 +49,87 @@
         <!-- Populated dynamically via JS -->
       </div>
     </div>
-    <button type="button" class="btn-add-workspace" id="btn-add-workspace" title="Register Target Project Directory">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-        <line x1="12" y1="5" x2="12" y2="19"></line>
-        <line x1="5" y1="12" x2="19" y2="12"></line>
-      </svg>
-      <span>+ Add Project</span>
-    </button>
+    <div class="workspace-actions">
+      <button type="button" class="btn-workspace-info" id="btn-toggle-ws-drawer" title="Inspect Active Project Context &amp; Files">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+          <polyline points="14 2 14 8 20 8"></polyline>
+          <line x1="16" y1="13" x2="8" y2="13"></line>
+          <line x1="16" y1="17" x2="8" y2="17"></line>
+        </svg>
+        <span>Project Files</span>
+      </button>
+      <button type="button" class="btn-add-workspace" id="btn-add-workspace" title="Register Target Project Directory">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <line x1="12" y1="5" x2="12" y2="19"></line>
+          <line x1="5" y1="12" x2="19" y2="12"></line>
+        </svg>
+        <span>+ Add Project</span>
+      </button>
+    </div>
   </nav>
 
-  <!-- Main Grid Workspace -->
-  <main class="main-container" id="main-container">
+  <!-- Master-Detail Chat Layout -->
+  <div class="app-layout" id="app-layout">
 
-    <!-- Left Panel: Vibe Studio (Prompt Authoring & Configuration) -->
-    <section class="card-panel" id="panel-vibe-studio" aria-label="Vibe Studio Prompt Editor">
-      <div class="panel-header" id="studio-header">
-        <div class="panel-title" id="studio-title">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
-          </svg>
-          <span>Vibe Studio</span>
+    <!-- Left Sidebar: Project Chat History -->
+    <aside class="chat-sidebar" id="chat-sidebar" aria-label="Chat History">
+      <div class="sidebar-header" id="sidebar-header">
+        <div class="sidebar-title-row">
+          <div class="sidebar-heading">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+            </svg>
+            <span>Sessions</span>
+          </div>
+          <button type="button" class="btn-new-chat" id="btn-new-chat" title="Create New Chat Session">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+              <line x1="12" y1="5" x2="12" y2="19"></line>
+              <line x1="5" y1="12" x2="19" y2="12"></line>
+            </svg>
+            <span>New Chat</span>
+          </button>
         </div>
-        <div class="preset-bar" id="preset-bar">
-          <button type="button" class="btn-chip preset-btn" data-preset="refactor" id="preset-refactor">⚡ Refactor Pool</button>
-          <button type="button" class="btn-chip preset-btn" data-preset="review" id="preset-review">🔒 Security Review</button>
-          <button type="button" class="btn-chip preset-btn" data-preset="tests" id="preset-tests">🧪 State Tests</button>
+
+        <div class="search-box" id="search-box">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="11" cy="11" r="8"></circle>
+            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+          </svg>
+          <input type="text" id="chat-search-input" placeholder="Search sessions..." />
         </div>
       </div>
 
-      <div class="panel-body" id="studio-body">
+      <!-- Scrollable Chat Sessions List -->
+      <div class="chat-sessions-list" id="chat-sessions-list" role="list">
+        <!-- Rendered dynamically -->
+        <div class="sessions-empty" id="sessions-loading">Loading conversations...</div>
+      </div>
+    </aside>
 
-        <!-- Active Workspace Context Card -->
-        <div class="workspace-context-card" id="workspace-context-card">
-          <div class="ws-context-header">
-            <div class="ws-context-title">
-              <span class="ws-badge self" id="ws-badge-self">SELF</span>
-              <strong id="ws-active-name">Vibe Forge</strong>
-              <span class="ws-active-id" id="ws-active-id">#root</span>
-            </div>
-            <div class="ws-context-meta">
-              <span class="ws-meta-pill" id="ws-meta-runtime">python:3.10</span>
-              <span class="ws-meta-pill" id="ws-meta-test">pytest</span>
-            </div>
+    <!-- Center/Main Panel: Active Multi-Turn Chat & Telemetry Studio -->
+    <main class="chat-main" id="chat-main">
+
+      <!-- Session Telemetry Bar -->
+      <section class="session-telemetry-bar" id="session-telemetry-bar" aria-label="Chat Session Telemetry">
+        <div class="telemetry-left">
+          <div class="session-title-wrapper" id="session-title-wrapper">
+            <h2 class="session-title" id="session-title" title="Click to rename session">New Chat</h2>
+            <button type="button" class="btn-edit-title" id="btn-edit-title" title="Rename Session">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M12 20h9"></path>
+                <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path>
+              </svg>
+            </button>
           </div>
-          <div class="ws-path-row">
-            <span class="ws-path-label">Scope:</span>
-            <code class="ws-path-code" id="ws-active-path">C:\Dev\AI-Agents-App</code>
-          </div>
+          <div class="session-workspace-tag" id="session-workspace-tag">#root</div>
         </div>
-        
-        <!-- Provider & Model Selection -->
-        <div style="display:grid; grid-template-columns: 1fr 1fr; gap:12px;" id="config-row">
-          <div class="form-group" id="group-provider">
-            <label class="form-label" for="provider-select" id="lbl-provider">
-              <span>Agent Infrastructure</span>
-            </label>
-            <select class="custom-select" id="provider-select" aria-label="Select Agent Provider">
-              <!-- Populated dynamically from /api/providers -->
+
+        <!-- Provider and Model Selectors -->
+        <div class="telemetry-center" id="telemetry-center">
+          <div class="selector-pair">
+            <label for="provider-select" class="selector-label">Provider:</label>
+            <select class="custom-select-sm" id="provider-select" aria-label="Agent Provider">
               <option value="fake">Fake (offline demo)</option>
               <option value="gemini-default">Google Gemini (thinking)</option>
               <option value="openrouter-default" disabled>OpenRouter (disabled)</option>
@@ -113,144 +137,173 @@
             </select>
           </div>
 
-          <div class="form-group" id="group-model">
-            <label class="form-label" for="model-select" id="lbl-model">
-              <span>Target Model</span>
-            </label>
-            <select class="custom-select" id="model-select" aria-label="Select Model">
+          <div class="selector-pair">
+            <label for="model-select" class="selector-label">Model:</label>
+            <select class="custom-select-sm" id="model-select" aria-label="Model Selection">
               <option value="">Default Model</option>
             </select>
           </div>
         </div>
 
-        <!-- System Instructions -->
-        <div class="form-group" id="group-system-prompt">
-          <label class="form-label" for="system-prompt-input" id="lbl-system-prompt">
-            <span>System Instructions</span>
-            <span class="hint">Role &amp; Guardrails</span>
-          </label>
-          <textarea class="custom-textarea" id="system-prompt-input" rows="3" placeholder="Define the agent persona, domain boundaries, and explicit negative constraints..." aria-label="System Instructions">You are a Principal Software Architect. Focus on clean code, domain isolation, and resilient patterns. Output unified diffs where appropriate.</textarea>
+        <!-- Live Session Metrics -->
+        <div class="telemetry-right" id="telemetry-right">
+          <div class="metric-pill" id="metric-pill-tokens" title="Session Tokens (Total · Prompt · Completion · Reasoning)">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path>
+            </svg>
+            <span class="metric-label">Tokens:</span>
+            <strong id="session-stat-tokens">0</strong>
+          </div>
+
+          <div class="metric-pill" id="metric-pill-cost" title="Total Session Cost (USD)">
+            <span class="metric-label">Cost:</span>
+            <strong id="session-stat-cost">$0.000</strong>
+          </div>
+
+          <div class="metric-pill" id="metric-pill-turns" title="Total Completed Message Turns">
+            <span class="metric-label">Turns:</span>
+            <strong id="session-stat-turns">0</strong>
+          </div>
+        </div>
+      </section>
+
+      <!-- Multi-Turn Message Thread -->
+      <section class="messages-container" id="messages-container" aria-label="Conversation Thread">
+        <div class="messages-inner" id="messages-inner">
+          <!-- Populated dynamically via JS -->
+          <div class="chat-welcome" id="chat-welcome">
+            <div class="welcome-icon">⚡</div>
+            <h3>Vibe Forge Multi-Turn Chat Studio</h3>
+            <p>Every message turn maintains full workspace sandboxing, prompt token economy, structured reasoning, and per-message inspection.</p>
+            <div class="quick-preset-cards" id="quick-preset-cards">
+              <button type="button" class="quick-card preset-btn" data-preset="refactor">
+                <div class="qc-title">⚡ Refactor Pool</div>
+                <div class="qc-desc">Add connection retry backoff to database pool</div>
+              </button>
+              <button type="button" class="quick-card preset-btn" data-preset="review">
+                <div class="qc-title">🔒 Security Audit</div>
+                <div class="qc-desc">Inspect authentication &amp; token handling</div>
+              </button>
+              <button type="button" class="quick-card preset-btn" data-preset="tests">
+                <div class="qc-title">🧪 State Verification</div>
+                <div class="qc-desc">Generate parameterized tests for state transitions</div>
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Persistent Anchored Prompt Composer -->
+      <footer class="chat-composer-container" id="chat-composer-container">
+
+        <!-- Collapsible System Instructions Drawer -->
+        <div class="system-instructions-drawer collapsed" id="system-instructions-drawer">
+          <div class="drawer-header" id="drawer-header-system">
+            <button type="button" class="btn-toggle-drawer" id="btn-toggle-system" aria-expanded="false">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="arrow-icon">
+                <polyline points="9 18 15 12 9 6"></polyline>
+              </svg>
+              <span>System Persona &amp; Constraints</span>
+              <span class="drawer-hint">(Optional per-turn override)</span>
+            </button>
+          </div>
+          <div class="drawer-content" id="drawer-content-system">
+            <textarea class="custom-textarea system-textarea" id="system-prompt-input" rows="2" placeholder="Define the agent persona, domain boundaries, and explicit negative constraints...">You are a Principal Software Architect. Focus on clean code, domain isolation, and resilient patterns. Output unified diffs where appropriate.</textarea>
+          </div>
         </div>
 
-        <!-- User Prompt / Intention -->
-        <div class="form-group" id="group-user-prompt">
-          <label class="form-label" for="user-prompt-input" id="lbl-user-prompt">
-            <span>User Prompt / Intention</span>
-            <span class="hint">Vibe coding task</span>
-          </label>
-          <textarea class="custom-textarea" id="user-prompt-input" rows="5" placeholder="Describe the feature, refactoring, or code review task you want the agent to execute..." aria-label="User Prompt">Refactor the database connection pool to support automatic retry backoff on connection timeouts.</textarea>
-        </div>
+        <!-- Composer Main Card -->
+        <div class="composer-card" id="composer-card">
+          <div class="composer-textarea-wrapper">
+            <textarea
+              class="composer-textarea"
+              id="user-prompt-input"
+              rows="2"
+              placeholder="Type your vibe prompt... (Enter to send, Shift+Enter for new line)"
+              aria-label="User Prompt"
+            ></textarea>
+          </div>
 
-        <!-- Realtime Linter & Token Economy Widget -->
-        <div class="linter-box" id="linter-box">
-          <div class="linter-header" id="linter-header">
-            <div style="display:flex; align-items:center; gap:8px;">
-              <span style="font-size:12px; font-weight:600; color:#cbd5e1;">Prompt Quality &amp; Hygiene</span>
-              <div class="score-pill good" id="lint-score-badge">
-                <span>Score:</span>
-                <span id="lint-score-val">100</span>
+          <!-- Bottom Control Bar -->
+          <div class="composer-footer" id="composer-footer">
+            <div class="composer-meta-left">
+              <!-- Prompt Quality & Token Economy Pill -->
+              <div class="linter-pill good" id="lint-score-badge" title="Prompt Quality &amp; Token Hygiene Score">
+                <span class="linter-dot"></span>
+                <span id="lint-score-text">Quality: 100</span>
+                <span class="linter-sep">·</span>
+                <span id="token-estimate-badge">~18 tokens</span>
               </div>
             </div>
-            <div style="display:flex; align-items:center; gap:8px;">
-              <span style="font-size:11px; color:#94a3b8;" id="token-estimate-badge">~18 tokens</span>
-              <button type="button" class="btn-chip" id="btn-lint-prompt">Lint Check</button>
+
+            <div class="composer-actions-right">
+              <button type="button" class="btn-stop-stream" id="btn-stop" style="display:none;" title="Cancel Active Turn">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+                  <rect x="4" y="4" width="16" height="16" rx="2"></rect>
+                </svg>
+                <span>Stop</span>
+              </button>
+
+              <button type="button" class="btn-send-turn" id="btn-execute" title="Send Prompt &amp; Run Turn (Enter)">
+                <span>Send Turn</span>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                  <line x1="22" y1="2" x2="11" y2="13"></line>
+                  <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+                </svg>
+              </button>
             </div>
           </div>
-          <div class="linter-issues-list" id="linter-issues-list">
-            <!-- Populated via /api/prompts/lint -->
-          </div>
         </div>
 
-        <!-- Action Controls -->
-        <div class="action-button-group" id="action-button-group">
-          <button type="button" class="btn-primary" id="btn-execute">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-              <polygon points="5 3 19 12 5 21 5 3"/>
-            </svg>
-            <span>Run Vibe Stream</span>
-          </button>
-          <button type="button" class="btn-secondary" id="btn-stop" disabled>Stop</button>
-          <button type="button" class="btn-secondary" id="btn-clear">Clear</button>
-        </div>
+      </footer>
 
+    </main>
+
+  </div>
+
+  <!-- Workspace Details & File Tree Drawer (Right Slide-over) -->
+  <aside class="ws-drawer" id="ws-drawer" aria-hidden="true">
+    <div class="ws-drawer-header">
+      <div class="ws-drawer-title">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+        </svg>
+        <span id="drawer-ws-name">Workspace Context</span>
       </div>
-    </section>
-
-    <!-- Right Panel: Execution Dashboard & Artifacts -->
-    <section class="card-panel" id="panel-execution-dashboard" aria-label="Execution Dashboard">
-      <div class="panel-header" id="dashboard-header">
-        <div class="tab-nav" id="tab-nav" role="tablist">
-          <button type="button" class="tab-btn active" data-tab="tab-terminal" id="btn-tab-terminal" role="tab">Live Console</button>
-          <button type="button" class="tab-btn" data-tab="tab-diff" id="btn-tab-diff" role="tab">Diff Artifact</button>
-          <button type="button" class="tab-btn" data-tab="tab-context" id="btn-tab-context" role="tab">Context &amp; Tree</button>
-          <button type="button" class="tab-btn" data-tab="tab-raw" id="btn-tab-raw" role="tab">Raw Event Stream</button>
+      <button type="button" class="btn-close-drawer" id="btn-close-ws-drawer" aria-label="Close drawer">&times;</button>
+    </div>
+    <div class="ws-drawer-body">
+      <div class="drawer-section">
+        <h4 class="drawer-section-title">Project Scope</h4>
+        <div class="drawer-prop-row">
+          <span class="drawer-prop-key">Path:</span>
+          <code class="drawer-prop-code" id="ws-active-path">C:\Dev\AI-Agents-App</code>
         </div>
-
-        <div style="display:flex; align-items:center; gap:10px;">
-          <span style="font-size:11px; color:#64748b;">Status:</span>
-          <span class="badge" id="task-status-badge" style="font-family:var(--font-mono); font-weight:700;">IDLE</span>
+        <div class="drawer-prop-row">
+          <span class="drawer-prop-key">Runtime:</span>
+          <span class="ws-meta-pill" id="ws-meta-runtime">python:3.10</span>
+          <span class="drawer-prop-key" style="margin-left:8px;">Test:</span>
+          <span class="ws-meta-pill" id="ws-meta-test">pytest</span>
         </div>
       </div>
 
-      <!-- Tab 1: Terminal Console -->
-      <div class="tab-content active" id="tab-terminal" role="tabpanel">
-        <div class="terminal-console" id="terminal-output" aria-live="polite">
-          <div class="terminal-line status">Vibe Forge Meta-Agent Studio ready. Select a workspace and click "Run Vibe Stream".</div>
-        </div>
+      <div class="drawer-section">
+        <h4 class="drawer-section-title">Context Files &amp; Documentation</h4>
+        <div class="inspector-chips" id="inspector-context-chips"></div>
+        <pre class="inspector-pre" id="inspector-doc-preview" style="max-height:160px; font-size:11px; margin-top:8px;">Select a file above to preview context...</pre>
       </div>
 
-      <!-- Tab 2: Artifact Diff Viewer -->
-      <div class="tab-content" id="tab-diff" role="tabpanel">
-        <div class="diff-viewer" id="diff-container">
-          <div style="color:#64748b; padding:16px;">No artifacts generated yet...</div>
-        </div>
+      <div class="drawer-section">
+        <h4 class="drawer-section-title">Manifest Contract</h4>
+        <pre class="inspector-pre" id="inspector-manifest-json">Loading manifest...</pre>
       </div>
 
-      <!-- Tab 3: Context Inspector & Tree -->
-      <div class="tab-content" id="tab-context" role="tabpanel">
-        <div class="context-inspector" id="context-inspector">
-          <div class="inspector-section">
-            <h3 class="inspector-title">Active Manifest Contract</h3>
-            <pre class="inspector-pre" id="inspector-manifest-json">Loading manifest...</pre>
-          </div>
-          <div class="inspector-section">
-            <h3 class="inspector-title">Documentation &amp; Context Files</h3>
-            <div class="inspector-chips" id="inspector-context-chips">
-              <!-- Loaded from manifest -->
-            </div>
-            <pre class="inspector-pre" id="inspector-doc-preview" style="max-height:160px; font-size:11px;">Select a documentation file above to preview context injection...</pre>
-          </div>
-          <div class="inspector-section">
-            <h3 class="inspector-title">Filtered Workspace Tree</h3>
-            <pre class="inspector-pre tree-pre" id="inspector-tree-view">Loading tree...</pre>
-          </div>
-        </div>
+      <div class="drawer-section">
+        <h4 class="drawer-section-title">Filtered Workspace Tree</h4>
+        <pre class="inspector-pre tree-pre" id="inspector-tree-view">Loading tree...</pre>
       </div>
-
-      <!-- Tab 4: Raw Event JSON Inspector -->
-      <div class="tab-content" id="tab-raw" role="tabpanel">
-        <pre class="terminal-console" id="raw-json-output" style="color:#94a3b8; font-size:11.5px;"></pre>
-      </div>
-
-      <!-- Status Footer -->
-      <div class="status-footer" id="status-footer">
-        <div class="stats-group" id="stats-group">
-          <div class="stat-item" id="stat-item-tokens">
-            <span>Tokens:</span>
-            <strong id="stat-tokens">0 (0 in / 0 out)</strong>
-          </div>
-          <div class="stat-item" id="stat-item-duration">
-            <span>Elapsed:</span>
-            <strong id="stat-duration">0.0s</strong>
-          </div>
-        </div>
-        <div style="font-size:11px; color:#64748b;" id="footer-engine-label">
-          Target: <strong style="color:var(--accent-cyan);" id="stat-workspace-label">root (Self)</strong> · Stream: <strong style="color:#cbd5e1;">WebSocket</strong>
-        </div>
-      </div>
-    </section>
-
-  </main>
+    </div>
+  </aside>
 
   <!-- Modal Dialog: Register Target Workspace -->
   <div class="modal-backdrop" id="modal-add-workspace" style="display:none;" aria-hidden="true">

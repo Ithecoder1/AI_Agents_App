@@ -1,0 +1,27 @@
+# Re-exported from root config/tasks.yaml for project/ relative runs
+workflow:
+  max_retries: 3
+  checkpoint_path: "logs/company_state.json"
+  project_root_template: "projects/{project_id}"
+
+phases:
+  ARCHITECT:
+    node: "architect_node"
+  CODER:
+    node: "coder_node"
+  DEVOPS:
+    node: "devops_node"
+  QA:
+    node: "qa_node"
+  DECOMPOSE:
+    node: "task_decomposer"
+  COMPLETED:
+    description: "All milestone tasks successfully implemented, verified, and passing."
+  FAILED:
+    description: "Execution failed due to unrecoverable errors."
+
+token_economy:
+  max_prompt_lines_per_file: 50
+  strip_comments_in_summary: true
+  exclude_test_files_from_coder_context: false
+  truncate_traceback_lines: 40

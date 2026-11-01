@@ -1,0 +1,50 @@
+# ==============================================================================
+# LangGraph Autonomous Startup Orchestrator — Workflow & Task Pipeline
+# ==============================================================================
+
+workflow:
+  max_retries: 3
+  checkpoint_path: "logs/company_state.json"
+  project_root_template: "projects/{project_id}"
+
+phases:
+  ARCHITECT:
+    node: "architect_node"
+    description: "Generates or updates system architecture blueprint and directory tree."
+    produces: ["architecture_spec"]
+    required_to_complete: "architecture"
+
+  CODER:
+    node: "coder_node"
+    description: "Implements code files according to architecture spec and handles QA feedback."
+    produces: ["code_files"]
+    required_to_complete: "code"
+
+  DEVOPS:
+    node: "devops_node"
+    description: "Configures environment, requirements.txt, and test runner harness."
+    produces: ["requirements.txt", "pytest.ini"]
+    required_to_complete: "devops"
+
+  QA:
+    node: "qa_node"
+    description: "Executes automated test suites with pytest and extracts diagnostics."
+    produces: ["test_results"]
+    required_to_complete: "qa"
+
+  DECOMPOSE:
+    node: "task_decomposer"
+    description: "Dynamically decomposes failing components when retry limits are exceeded."
+    produces: ["decomposed_spec", "subtasks"]
+
+  COMPLETED:
+    description: "All milestone tasks successfully implemented, verified, and passing."
+
+  FAILED:
+    description: "Execution failed due to unrecoverable errors."
+
+token_economy:
+  max_prompt_lines_per_file: 50
+  strip_comments_in_summary: true
+  exclude_test_files_from_coder_context: false
+  truncate_traceback_lines: 40

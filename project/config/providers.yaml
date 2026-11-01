@@ -12,6 +12,15 @@ providers:
       delay_ms: 40
       emit_artifact: true
 
+  - id: autonomous-orchestrator
+    kind: autonomous_orchestrator
+    display_name: Autonomous Startup (LangGraph)
+    adapter: providers.adapters.autonomous_orchestrator:StartupOrchestratorProvider
+    enabled: true
+    options:
+      checkpoint_file: logs/company_state.json
+      max_retries: 3
+
   # --- LLM "thinking" providers: enable once the matching API key is set ------------
   # Reasoning/thinking is streamed as THOUGHT events. Per-task overrides go in
   # ExecutionParams.extra (e.g. {"thinking_budget": 4096}, {"reasoning": {"effort": "high"}}).

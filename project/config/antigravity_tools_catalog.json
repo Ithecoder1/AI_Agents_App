@@ -1,0 +1,1050 @@
+{
+  "version": 1,
+  "description": "Antigravity Headless Tool Manifest & Dynamic Catalog",
+  "tools_count": 60,
+  "tools": [
+    {
+      "name": "view_file",
+      "category": "filesystem",
+      "summary": "View text or binary files with line range slice bounds and byte offsets.",
+      "schema": {
+        "name": "view_file",
+        "description": "View text or binary files with line range slice bounds and byte offsets.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "AbsolutePath": {"type": "string", "description": "Absolute path to the target file."},
+            "StartLine": {"type": "integer", "description": "1-indexed starting line number (inclusive)."},
+            "EndLine": {"type": "integer", "description": "1-indexed ending line number (inclusive)."},
+            "ContentOffset": {"type": "integer", "description": "Byte offset into file content if truncated."}
+          },
+          "required": ["AbsolutePath"]
+        }
+      },
+      "requires_approval": false
+    },
+    {
+      "name": "write_to_file",
+      "category": "filesystem",
+      "summary": "Create a new file or overwrite an existing file with given code content.",
+      "schema": {
+        "name": "write_to_file",
+        "description": "Create a new file or overwrite an existing file with given code content.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "TargetFile": {"type": "string", "description": "Absolute path to the target file to create or overwrite."},
+            "CodeContent": {"type": "string", "description": "Source code or text content to write."},
+            "Description": {"type": "string", "description": "Explanation of changes made."},
+            "Overwrite": {"type": "boolean", "description": "Must be true to replace an existing file."}
+          },
+          "required": ["TargetFile", "CodeContent", "Description"]
+        }
+      },
+      "requires_approval": false
+    },
+    {
+      "name": "replace_file_content",
+      "category": "filesystem",
+      "summary": "Replace a single contiguous block of text in an existing file with exact matching.",
+      "schema": {
+        "name": "replace_file_content",
+        "description": "Replace a single contiguous block of text in an existing file with exact matching.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "TargetFile": {"type": "string", "description": "Absolute path to the target file."},
+            "Instruction": {"type": "string", "description": "Brief description of the edit."},
+            "TargetContent": {"type": "string", "description": "Exact text string to be replaced."},
+            "ReplacementContent": {"type": "string", "description": "Replacement text content."},
+            "StartLine": {"type": "integer", "description": "Start line bound for search."},
+            "EndLine": {"type": "integer", "description": "End line bound for search."}
+          },
+          "required": ["TargetFile", "TargetContent", "ReplacementContent", "StartLine", "EndLine"]
+        }
+      },
+      "requires_approval": false
+    },
+    {
+      "name": "multi_replace_file_content",
+      "category": "filesystem",
+      "summary": "Apply multiple non-contiguous surgical replacements across a single file.",
+      "schema": {
+        "name": "multi_replace_file_content",
+        "description": "Apply multiple non-contiguous surgical replacements across a single file.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "TargetFile": {"type": "string", "description": "Absolute path to the target file."},
+            "Instruction": {"type": "string", "description": "Description of overall modifications."},
+            "ReplacementChunks": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "TargetContent": {"type": "string"},
+                  "ReplacementContent": {"type": "string"},
+                  "StartLine": {"type": "integer"},
+                  "EndLine": {"type": "integer"}
+                },
+                "required": ["TargetContent", "ReplacementContent", "StartLine", "EndLine"]
+              }
+            }
+          },
+          "required": ["TargetFile", "ReplacementChunks"]
+        }
+      },
+      "requires_approval": false
+    },
+    {
+      "name": "sed_file",
+      "category": "filesystem",
+      "summary": "Perform stream editing or regex substitution across lines in a file.",
+      "schema": {
+        "name": "sed_file",
+        "description": "Perform stream editing or regex substitution across lines in a file.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "FilePath": {"type": "string"},
+            "Pattern": {"type": "string"},
+            "Replacement": {"type": "string"}
+          },
+          "required": ["FilePath", "Pattern", "Replacement"]
+        }
+      },
+      "requires_approval": false
+    },
+    {
+      "name": "list_dir",
+      "category": "filesystem",
+      "summary": "List child files and subdirectories of a given workspace directory.",
+      "schema": {
+        "name": "list_dir",
+        "description": "List child files and subdirectories of a given workspace directory.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "DirectoryPath": {"type": "string", "description": "Absolute path to directory."}
+          },
+          "required": ["DirectoryPath"]
+        }
+      },
+      "requires_approval": false
+    },
+    {
+      "name": "grep_search",
+      "category": "filesystem",
+      "summary": "Fast regex or literal pattern search across files using ripgrep.",
+      "schema": {
+        "name": "grep_search",
+        "description": "Fast regex or literal pattern search across files using ripgrep.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "Query": {"type": "string", "description": "Search term or regex pattern."},
+            "SearchPath": {"type": "string", "description": "Root path to search."},
+            "CaseInsensitive": {"type": "boolean"},
+            "IsRegex": {"type": "boolean"}
+          },
+          "required": ["Query", "SearchPath"]
+        }
+      },
+      "requires_approval": false
+    },
+    {
+      "name": "find_by_name",
+      "category": "filesystem",
+      "summary": "Search files and directories matching filename patterns across the workspace.",
+      "schema": {
+        "name": "find_by_name",
+        "description": "Search files and directories matching filename patterns across the workspace.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "Pattern": {"type": "string", "description": "Filename pattern to match."},
+            "Directory": {"type": "string", "description": "Base search directory."}
+          },
+          "required": ["Pattern"]
+        }
+      },
+      "requires_approval": false
+    },
+    {
+      "name": "run_command",
+      "category": "terminal",
+      "summary": "Execute a shell or terminal command asynchronously within the workspace.",
+      "schema": {
+        "name": "run_command",
+        "description": "Execute a shell or terminal command asynchronously within the workspace.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "CommandLine": {"type": "string", "description": "Exact command string to execute."},
+            "Cwd": {"type": "string", "description": "Working directory."},
+            "WaitMsBeforeAsync": {"type": "integer", "description": "Milliseconds to wait synchronously before backgrounding."}
+          },
+          "required": ["CommandLine", "Cwd"]
+        }
+      },
+      "requires_approval": true
+    },
+    {
+      "name": "send_command_input",
+      "category": "terminal",
+      "summary": "Send interactive stdin characters or input to a running terminal process.",
+      "schema": {
+        "name": "send_command_input",
+        "description": "Send interactive stdin characters or input to a running terminal process.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "TaskId": {"type": "string"},
+            "Input": {"type": "string"}
+          },
+          "required": ["TaskId", "Input"]
+        }
+      },
+      "requires_approval": false
+    },
+    {
+      "name": "command_status",
+      "category": "terminal",
+      "summary": "Check current execution status, output buffer, and exit code of a background command.",
+      "schema": {
+        "name": "command_status",
+        "description": "Check current execution status, output buffer, and exit code of a background command.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "TaskId": {"type": "string"}
+          },
+          "required": ["TaskId"]
+        }
+      },
+      "requires_approval": false
+    },
+    {
+      "name": "manage_task",
+      "category": "terminal",
+      "summary": "Manage background processes (list, status, send input, kill).",
+      "schema": {
+        "name": "manage_task",
+        "description": "Manage background processes (list, status, send input, kill).",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "Action": {"type": "string", "enum": ["list", "status", "kill", "send_input"]},
+            "TaskId": {"type": "string"},
+            "Input": {"type": "string"}
+          },
+          "required": ["Action"]
+        }
+      },
+      "requires_approval": false
+    },
+    {
+      "name": "open_browser_url",
+      "category": "browser",
+      "summary": "Open and navigate active browser session to a target web URL.",
+      "schema": {
+        "name": "open_browser_url",
+        "description": "Open and navigate active browser session to a target web URL.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "Url": {"type": "string"}
+          },
+          "required": ["Url"]
+        }
+      },
+      "requires_approval": false
+    },
+    {
+      "name": "read_browser_page",
+      "category": "browser",
+      "summary": "Extract accessible text and markdown structure from the loaded browser page.",
+      "schema": {
+        "name": "read_browser_page",
+        "description": "Extract accessible text and markdown structure from the loaded browser page.",
+        "parameters": {
+          "type": "object",
+          "properties": {}
+        }
+      },
+      "requires_approval": false
+    },
+    {
+      "name": "read_url_content",
+      "category": "browser",
+      "summary": "Fetch static markdown/text from a web URL via fast HTTP request without browser UI.",
+      "schema": {
+        "name": "read_url_content",
+        "description": "Fetch static markdown/text from a web URL via fast HTTP request without browser UI.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "Url": {"type": "string"}
+          },
+          "required": ["Url"]
+        }
+      },
+      "requires_approval": false
+    },
+    {
+      "name": "browser_click_element",
+      "category": "browser",
+      "summary": "Click a specific DOM element in the browser matching selector or query.",
+      "schema": {
+        "name": "browser_click_element",
+        "description": "Click a specific DOM element in the browser matching selector or query.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "Selector": {"type": "string"}
+          },
+          "required": ["Selector"]
+        }
+      },
+      "requires_approval": false
+    },
+    {
+      "name": "browser_input",
+      "category": "browser",
+      "summary": "Enter text into an interactive input, textarea, or contenteditable browser element.",
+      "schema": {
+        "name": "browser_input",
+        "description": "Enter text into an interactive input, textarea, or contenteditable browser element.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "Selector": {"type": "string"},
+            "Text": {"type": "string"}
+          },
+          "required": ["Selector", "Text"]
+        }
+      },
+      "requires_approval": false
+    },
+    {
+      "name": "browser_scroll",
+      "category": "browser",
+      "summary": "Scroll active browser viewport vertically or horizontally.",
+      "schema": {
+        "name": "browser_scroll",
+        "description": "Scroll active browser viewport vertically or horizontally.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "DeltaY": {"type": "integer"},
+            "DeltaX": {"type": "integer"}
+          }
+        }
+      },
+      "requires_approval": false
+    },
+    {
+      "name": "browser_scroll_dom",
+      "category": "browser",
+      "summary": "Scroll an inner container DOM element.",
+      "schema": {
+        "name": "browser_scroll_dom",
+        "description": "Scroll an inner container DOM element.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "Selector": {"type": "string"},
+            "DeltaY": {"type": "integer"}
+          },
+          "required": ["Selector"]
+        }
+      },
+      "requires_approval": false
+    },
+    {
+      "name": "browser_select_option",
+      "category": "browser",
+      "summary": "Select an option in an HTML select dropdown element.",
+      "schema": {
+        "name": "browser_select_option",
+        "description": "Select an option in an HTML select dropdown element.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "Selector": {"type": "string"},
+            "Value": {"type": "string"}
+          },
+          "required": ["Selector", "Value"]
+        }
+      },
+      "requires_approval": false
+    },
+    {
+      "name": "browser_drag_pixel_to_pixel",
+      "category": "browser",
+      "summary": "Drag mouse from source coordinates to destination pixel coordinates.",
+      "schema": {
+        "name": "browser_drag_pixel_to_pixel",
+        "description": "Drag mouse from source coordinates to destination pixel coordinates.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "StartX": {"type": "integer"},
+            "StartY": {"type": "integer"},
+            "EndX": {"type": "integer"},
+            "EndY": {"type": "integer"}
+          },
+          "required": ["StartX", "StartY", "EndX", "EndY"]
+        }
+      },
+      "requires_approval": false
+    },
+    {
+      "name": "click_browser_pixel",
+      "category": "browser",
+      "summary": "Click specific pixel coordinates on the browser canvas.",
+      "schema": {
+        "name": "click_browser_pixel",
+        "description": "Click specific pixel coordinates on the browser canvas.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "X": {"type": "integer"},
+            "Y": {"type": "integer"}
+          },
+          "required": ["X", "Y"]
+        }
+      },
+      "requires_approval": false
+    },
+    {
+      "name": "browser_mouse_down",
+      "category": "browser",
+      "summary": "Press mouse button down at specific browser coordinates.",
+      "schema": {
+        "name": "browser_mouse_down",
+        "description": "Press mouse button down at specific browser coordinates.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "Button": {"type": "string"}
+          }
+        }
+      },
+      "requires_approval": false
+    },
+    {
+      "name": "browser_mouse_up",
+      "category": "browser",
+      "summary": "Release mouse button up at specific browser coordinates.",
+      "schema": {
+        "name": "browser_mouse_up",
+        "description": "Release mouse button up at specific browser coordinates.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "Button": {"type": "string"}
+          }
+        }
+      },
+      "requires_approval": false
+    },
+    {
+      "name": "browser_move_mouse",
+      "category": "browser",
+      "summary": "Move browser cursor pointer to pixel coordinate.",
+      "schema": {
+        "name": "browser_move_mouse",
+        "description": "Move browser cursor pointer to pixel coordinate.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "X": {"type": "integer"},
+            "Y": {"type": "integer"}
+          },
+          "required": ["X", "Y"]
+        }
+      },
+      "requires_approval": false
+    },
+    {
+      "name": "browser_press_key",
+      "category": "browser",
+      "summary": "Simulate keyboard key press event in active browser element.",
+      "schema": {
+        "name": "browser_press_key",
+        "description": "Simulate keyboard key press event in active browser element.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "Key": {"type": "string"}
+          },
+          "required": ["Key"]
+        }
+      },
+      "requires_approval": false
+    },
+    {
+      "name": "browser_refresh_page",
+      "category": "browser",
+      "summary": "Reload and refresh the current browser page.",
+      "schema": {
+        "name": "browser_refresh_page",
+        "description": "Reload and refresh the current browser page.",
+        "parameters": {
+          "type": "object",
+          "properties": {}
+        }
+      },
+      "requires_approval": false
+    },
+    {
+      "name": "browser_resize_window",
+      "category": "browser",
+      "summary": "Resize browser window dimensions to width and height.",
+      "schema": {
+        "name": "browser_resize_window",
+        "description": "Resize browser window dimensions to width and height.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "Width": {"type": "integer"},
+            "Height": {"type": "integer"}
+          },
+          "required": ["Width", "Height"]
+        }
+      },
+      "requires_approval": false
+    },
+    {
+      "name": "browser_list_network_requests",
+      "category": "browser",
+      "summary": "List intercepted HTTP requests and status codes made by the page.",
+      "schema": {
+        "name": "browser_list_network_requests",
+        "description": "List intercepted HTTP requests and status codes made by the page.",
+        "parameters": {
+          "type": "object",
+          "properties": {}
+        }
+      },
+      "requires_approval": false
+    },
+    {
+      "name": "browser_get_network_request",
+      "category": "browser",
+      "summary": "Retrieve request/response headers and body for a specific network ID.",
+      "schema": {
+        "name": "browser_get_network_request",
+        "description": "Retrieve request/response headers and body for a specific network ID.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "RequestId": {"type": "string"}
+          },
+          "required": ["RequestId"]
+        }
+      },
+      "requires_approval": false
+    },
+    {
+      "name": "capture_browser_console_logs",
+      "category": "browser",
+      "summary": "Retrieve recorded javascript error and info console logs.",
+      "schema": {
+        "name": "capture_browser_console_logs",
+        "description": "Retrieve recorded javascript error and info console logs.",
+        "parameters": {
+          "type": "object",
+          "properties": {}
+        }
+      },
+      "requires_approval": false
+    },
+    {
+      "name": "capture_browser_screenshot",
+      "category": "browser",
+      "summary": "Capture screenshot image of current page viewport.",
+      "schema": {
+        "name": "capture_browser_screenshot",
+        "description": "Capture screenshot image of current page viewport.",
+        "parameters": {
+          "type": "object",
+          "properties": {}
+        }
+      },
+      "requires_approval": false
+    },
+    {
+      "name": "execute_browser_javascript",
+      "category": "browser",
+      "summary": "Evaluate arbitrary javascript in active browser page execution context.",
+      "schema": {
+        "name": "execute_browser_javascript",
+        "description": "Evaluate arbitrary javascript in active browser page execution context.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "Script": {"type": "string"}
+          },
+          "required": ["Script"]
+        }
+      },
+      "requires_approval": true
+    },
+    {
+      "name": "list_browser_pages",
+      "category": "browser",
+      "summary": "List all active tabs and pages in the browser session.",
+      "schema": {
+        "name": "list_browser_pages",
+        "description": "List all active tabs and pages in the browser session.",
+        "parameters": {
+          "type": "object",
+          "properties": {}
+        }
+      },
+      "requires_approval": false
+    },
+    {
+      "name": "browser_get_dom",
+      "category": "browser",
+      "summary": "Fetch the simplified DOM structure of the current page.",
+      "schema": {
+        "name": "browser_get_dom",
+        "description": "Fetch the simplified DOM structure of the current page.",
+        "parameters": {
+          "type": "object",
+          "properties": {}
+        }
+      },
+      "requires_approval": false
+    },
+    {
+      "name": "browser_subagent",
+      "category": "browser",
+      "summary": "Launch autonomous browser subagent to execute multi-step web tasks.",
+      "schema": {
+        "name": "browser_subagent",
+        "description": "Launch autonomous browser subagent to execute multi-step web tasks.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "Task": {"type": "string"},
+            "TaskName": {"type": "string"}
+          },
+          "required": ["Task", "TaskName"]
+        }
+      },
+      "requires_approval": true
+    },
+    {
+      "name": "call_mcp_tool",
+      "category": "mcp",
+      "summary": "Invoke an external Model Context Protocol (MCP) server tool.",
+      "schema": {
+        "name": "call_mcp_tool",
+        "description": "Invoke an external Model Context Protocol (MCP) server tool.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "ServerName": {"type": "string"},
+            "ToolName": {"type": "string"},
+            "Arguments": {"type": "object"}
+          },
+          "required": ["ServerName", "ToolName"]
+        }
+      },
+      "requires_approval": true
+    },
+    {
+      "name": "define_subagent",
+      "category": "agent_control",
+      "summary": "Define and initialize a specialized subagent persona and scope.",
+      "schema": {
+        "name": "define_subagent",
+        "description": "Define and initialize a specialized subagent persona and scope.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "AgentName": {"type": "string"},
+            "Instructions": {"type": "string"}
+          },
+          "required": ["AgentName", "Instructions"]
+        }
+      },
+      "requires_approval": false
+    },
+    {
+      "name": "invoke_subagent",
+      "category": "agent_control",
+      "summary": "Delegate a subtask execution to a child subagent instance.",
+      "schema": {
+        "name": "invoke_subagent",
+        "description": "Delegate a subtask execution to a child subagent instance.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "AgentName": {"type": "string"},
+            "Task": {"type": "string"}
+          },
+          "required": ["AgentName", "Task"]
+        }
+      },
+      "requires_approval": false
+    },
+    {
+      "name": "manage_subagents",
+      "category": "agent_control",
+      "summary": "List, inspect, pause, or terminate spawned subagents.",
+      "schema": {
+        "name": "manage_subagents",
+        "description": "List, inspect, pause, or terminate spawned subagents.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "Action": {"type": "string"}
+          },
+          "required": ["Action"]
+        }
+      },
+      "requires_approval": false
+    },
+    {
+      "name": "manage_inbox",
+      "category": "agent_control",
+      "summary": "Check and retrieve incoming messages from other agents or queues.",
+      "schema": {
+        "name": "manage_inbox",
+        "description": "Check and retrieve incoming messages from other agents or queues.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "Action": {"type": "string"}
+          },
+          "required": ["Action"]
+        }
+      },
+      "requires_approval": false
+    },
+    {
+      "name": "send_message",
+      "category": "agent_control",
+      "summary": "Dispatch message or notification to another agent or channel.",
+      "schema": {
+        "name": "send_message",
+        "description": "Dispatch message or notification to another agent or channel.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "Recipient": {"type": "string"},
+            "Message": {"type": "string"}
+          },
+          "required": ["Recipient", "Message"]
+        }
+      },
+      "requires_approval": false
+    },
+    {
+      "name": "run_workflow",
+      "category": "agent_control",
+      "summary": "Execute a structured multi-phase workflow script.",
+      "schema": {
+        "name": "run_workflow",
+        "description": "Execute a structured multi-phase workflow script.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "WorkflowPath": {"type": "string"}
+          },
+          "required": ["WorkflowPath"]
+        }
+      },
+      "requires_approval": false
+    },
+    {
+      "name": "finish",
+      "category": "agent_control",
+      "summary": "Conclude the current session and report task completion status.",
+      "schema": {
+        "name": "finish",
+        "description": "Conclude the current session and report task completion status.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "Summary": {"type": "string"}
+          }
+        }
+      },
+      "requires_approval": false
+    },
+    {
+      "name": "schedule",
+      "category": "agent_control",
+      "summary": "Set a one-shot notification timer or recurring cron schedule.",
+      "schema": {
+        "name": "schedule",
+        "description": "Set a one-shot notification timer or recurring cron schedule.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "Prompt": {"type": "string"},
+            "DurationSeconds": {"type": "string"},
+            "CronExpression": {"type": "string"}
+          },
+          "required": ["Prompt"]
+        }
+      },
+      "requires_approval": false
+    },
+    {
+      "name": "wait",
+      "category": "agent_control",
+      "summary": "Pause agent execution for a specified duration in seconds.",
+      "schema": {
+        "name": "wait",
+        "description": "Pause agent execution for a specified duration in seconds.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "Seconds": {"type": "integer"}
+          },
+          "required": ["Seconds"]
+        }
+      },
+      "requires_approval": false
+    },
+    {
+      "name": "wait_5_seconds",
+      "category": "agent_control",
+      "summary": "Quickly pause execution for 5 seconds to await background tasks.",
+      "schema": {
+        "name": "wait_5_seconds",
+        "description": "Quickly pause execution for 5 seconds to await background tasks.",
+        "parameters": {
+          "type": "object",
+          "properties": {}
+        }
+      },
+      "requires_approval": false
+    },
+    {
+      "name": "ask_question",
+      "category": "user_interaction",
+      "summary": "Ask the user interactive multiple-choice questions or request clarification.",
+      "schema": {
+        "name": "ask_question",
+        "description": "Ask the user interactive multiple-choice questions or request clarification.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "questions": {"type": "array"}
+          },
+          "required": ["questions"]
+        }
+      },
+      "requires_approval": false
+    },
+    {
+      "name": "ask_permission",
+      "category": "user_interaction",
+      "summary": "Prompt user for explicit authorization to proceed with an action.",
+      "schema": {
+        "name": "ask_permission",
+        "description": "Prompt user for explicit authorization to proceed with an action.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "Reason": {"type": "string"}
+          },
+          "required": ["Reason"]
+        }
+      },
+      "requires_approval": false
+    },
+    {
+      "name": "ask_custom_permission",
+      "category": "user_interaction",
+      "summary": "Request custom scoped permissions from user.",
+      "schema": {
+        "name": "ask_custom_permission",
+        "description": "Request custom scoped permissions from user.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "Scope": {"type": "string"}
+          },
+          "required": ["Scope"]
+        }
+      },
+      "requires_approval": false
+    },
+    {
+      "name": "list_permissions",
+      "category": "user_interaction",
+      "summary": "List active permission grants and authorization policies.",
+      "schema": {
+        "name": "list_permissions",
+        "description": "List active permission grants and authorization policies.",
+        "parameters": {
+          "type": "object",
+          "properties": {}
+        }
+      },
+      "requires_approval": false
+    },
+    {
+      "name": "notebook_edit",
+      "category": "notebook",
+      "summary": "Add, edit, or delete code and markdown cells in Jupyter notebooks.",
+      "schema": {
+        "name": "notebook_edit",
+        "description": "Add, edit, or delete code and markdown cells in Jupyter notebooks.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "NotebookPath": {"type": "string"},
+            "CellIndex": {"type": "integer"},
+            "CellContent": {"type": "string"}
+          },
+          "required": ["NotebookPath"]
+        }
+      },
+      "requires_approval": false
+    },
+    {
+      "name": "notebook_execution",
+      "category": "notebook",
+      "summary": "Execute specific cells or all cells in a Jupyter notebook.",
+      "schema": {
+        "name": "notebook_execution",
+        "description": "Execute specific cells or all cells in a Jupyter notebook.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "NotebookPath": {"type": "string"},
+            "CellIndex": {"type": "integer"}
+          },
+          "required": ["NotebookPath"]
+        }
+      },
+      "requires_approval": true
+    },
+    {
+      "name": "search_web",
+      "category": "knowledge",
+      "summary": "Search the public web for information and return cited results.",
+      "schema": {
+        "name": "search_web",
+        "description": "Search the public web for information and return cited results.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "query": {"type": "string"},
+            "domain": {"type": "string"}
+          },
+          "required": ["query"]
+        }
+      },
+      "requires_approval": false
+    },
+    {
+      "name": "read_resource",
+      "category": "knowledge",
+      "summary": "Read contents of an external resource or knowledge artifact.",
+      "schema": {
+        "name": "read_resource",
+        "description": "Read contents of an external resource or knowledge artifact.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "Uri": {"type": "string"}
+          },
+          "required": ["Uri"]
+        }
+      },
+      "requires_approval": false
+    },
+    {
+      "name": "list_resources",
+      "category": "knowledge",
+      "summary": "List available external knowledge resources and documents.",
+      "schema": {
+        "name": "list_resources",
+        "description": "List available external knowledge resources and documents.",
+        "parameters": {
+          "type": "object",
+          "properties": {}
+        }
+      },
+      "requires_approval": false
+    },
+    {
+      "name": "delete_knowledge",
+      "category": "knowledge",
+      "summary": "Remove an item from the persistent agent knowledge base.",
+      "schema": {
+        "name": "delete_knowledge",
+        "description": "Remove an item from the persistent agent knowledge base.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "Key": {"type": "string"}
+          },
+          "required": ["Key"]
+        }
+      },
+      "requires_approval": false
+    },
+    {
+      "name": "generate_image",
+      "category": "media",
+      "summary": "Generate or edit visual images from text prompts.",
+      "schema": {
+        "name": "generate_image",
+        "description": "Generate or edit visual images from text prompts.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "Prompt": {"type": "string"},
+            "ImageName": {"type": "string"},
+            "AspectRatio": {"type": "string"}
+          },
+          "required": ["Prompt", "ImageName"]
+        }
+      },
+      "requires_approval": false
+    },
+    {
+      "name": "search_marketplace",
+      "category": "plugins",
+      "summary": "Search plugin and skill registry for installable extensions.",
+      "schema": {
+        "name": "search_marketplace",
+        "description": "Search plugin and skill registry for installable extensions.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "Query": {"type": "string"}
+          },
+          "required": ["Query"]
+        }
+      },
+      "requires_approval": false
+    },
+    {
+      "name": "list_plugin_accounts",
+      "category": "plugins",
+      "summary": "List active third-party plugin service accounts and status.",
+      "schema": {
+        "name": "list_plugin_accounts",
+        "description": "List active third-party plugin service accounts and status.",
+        "parameters": {
+          "type": "object",
+          "properties": {}
+        }
+      },
+      "requires_approval": false
+    }
+  ]
+}

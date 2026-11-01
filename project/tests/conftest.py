@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 from collections.abc import AsyncIterator
 from pathlib import Path
 
@@ -15,6 +16,11 @@ from app.infrastructure.persistence import (
     upgrade_database,
 )
 from sqlalchemy.ext.asyncio import AsyncEngine
+
+# Ensure workspace root is discoverable for company_core imports
+_WORKSPACE_ROOT = Path(__file__).resolve().parents[2]
+if str(_WORKSPACE_ROOT) not in sys.path:
+    sys.path.insert(0, str(_WORKSPACE_ROOT))
 
 
 @pytest_asyncio.fixture

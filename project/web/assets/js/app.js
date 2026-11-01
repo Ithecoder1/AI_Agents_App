@@ -188,7 +188,7 @@
       }
     },
 
-    async createChat(projectId, title = null, providerId = 'fake', model = null) {
+    async createChat(projectId, title = null, providerId = 'autonomous-orchestrator', model = null) {
       const res = await fetch(`/api/workspaces/${encodeURIComponent(projectId)}/chats`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -730,7 +730,7 @@
     try {
       const ws = workspaces.find(w => w.project_id === activeWorkspaceId);
       const title = `New Chat in ${ws?.name || activeWorkspaceId}`;
-      const providerId = el.providerSelect.value || 'fake';
+      const providerId = el.providerSelect.value || 'autonomous-orchestrator';
       const model = el.modelSelect.value || undefined;
 
       const created = await API.createChat(activeWorkspaceId, title, providerId, model);

@@ -19,6 +19,9 @@ fake = "providers.adapters.fake:FakeProvider"
 openrouter = "providers.adapters.openrouter:OpenRouterProvider"
 gemini = "providers.adapters.gemini:GeminiProvider"
 anthropic = "providers.adapters.anthropic:AnthropicProvider"
+autonomous_orchestrator = "providers.adapters.autonomous_orchestrator:StartupOrchestratorProvider"
+antigravity = "providers.adapters.antigravity:AntigravityProvider"
+
 
 [tool.setuptools]
 packages = [
@@ -27,6 +30,7 @@ packages = [
     "providers.adapters",
     "providers.adapters.anthropic",
     "providers.adapters.antigravity",
+    "providers.adapters.autonomous_orchestrator",
     "providers.adapters.fake",
     "providers.adapters.gemini",
     "providers.adapters.openrouter",

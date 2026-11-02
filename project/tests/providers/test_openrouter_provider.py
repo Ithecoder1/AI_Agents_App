@@ -4,14 +4,16 @@ import json
 
 import httpx
 import pytest
-from app.domain.enums import EventType
+from app.domain.enums import EventType, ExecutionMode
 from app.domain.errors import (
     AuthenticationError,
     InvalidRequestError,
     RateLimitedError,
     StreamDisconnectedError,
 )
+from app.domain.models import MetricsEvent, TextDeltaEvent, ThoughtEvent
 from app.domain.ports.agent_provider import IAgentProvider
+from app.domain.tools import ToolDescriptor
 from providers.adapters.openrouter import OpenRouterProvider
 
 from tests.contract.provider_contract import ProviderContractTests
@@ -118,3 +120,67 @@ async def test_stream_without_finish_reason_is_a_disconnect() -> None:
     provider = _provider(transport=stream_transport(sse(_chunk(content="partial"))))
     with pytest.raises(StreamDisconnectedError):
         await provider.execute(running_task("openrouter-default"))
+
+
+async def test_openrouter_tool_suppression_and_injection() -> None:
+    seen: list[httpx.Request] = []
+    provider = _provider(transport=stream_transport(_BODY, on_request=seen.append))
+
+    # 1. DIRECT_QA mode suppresses tools payload completely
+    task_qa = running_task(
+        "openrouter-default",
+        user="Direct QA question",
+        execution_mode=ExecutionMode.DIRECT_QA,
+        active_tools=(ToolDescriptor("read_file", "fs", "Read a file"),),
+    )
+    await provider.execute(task_qa)
+    req1 = seen[-1]
+    body1 = json.loads(req1.content)
+    assert "tools" not in body1
+
+    # 2. DYNAMIC_JIT mode with tools injects OpenAI function specification format
+    task_tools = running_task(
+        "openrouter-default",
+        user="Inspect file",
+        execution_mode=ExecutionMode.DYNAMIC_JIT,
+        active_tools=(
+            ToolDescriptor(
+                "view_file",
+                "fs",
+                "View file content",
+                schema={"properties": {"path": {"type": "string"}}},
+            ),
+        ),
+    )
+    await provider.execute(task_tools)
+    req2 = seen[-1]
+    body2 = json.loads(req2.content)
+    assert "tools" in body2
+    assert len(body2["tools"]) == 1
+    tool_def = body2["tools"][0]
+    assert tool_def["type"] == "function"
+    assert tool_def["function"]["name"] == "view_file"
+    assert tool_def["function"]["description"] == "View file content"
+    assert "properties" in tool_def["function"]["parameters"]
+
+
+async def test_openrouter_telemetry_observer() -> None:
+    provider = _provider()
+    seen_events: list[object] = []
+    provider.add_observer(seen_events.append)
+
+    task = running_task("openrouter-default")
+    events = [e async for e in provider.stream_execute(task)]
+    assert events
+
+    # Verify observers received strongly-typed TelemetryEvents
+    event_types = [type(e) for e in seen_events]
+    assert ThoughtEvent in event_types
+    assert TextDeltaEvent in event_types
+    assert MetricsEvent in event_types
+
+    # Test removing observer
+    provider.remove_observer(seen_events.append)
+    seen_len = len(seen_events)
+    provider.notify_observers(ThoughtEvent(text="ignored"))
+    assert len(seen_events) == seen_len

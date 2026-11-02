@@ -56,10 +56,10 @@ def _synthesize_initial_architecture(requirement: str) -> str:
 def _synthesize_initial_code(
     requirement: str, simulate_initial_bug: bool = False
 ) -> dict[str, str]:
-    """Generate initial code and tests. Can inject an intentional bug on attempt 0 to demonstrate self-correction."""
-    is_math = any(
-        k in requirement.lower() for k in ("1+1", "math", "calculator", "add")
-    )
+    """Generate initial code and tests.
+    Can inject an intentional bug on attempt 0 to demonstrate self-correction.
+    """
+    is_math = any(k in requirement.lower() for k in ("1+1", "math", "calculator", "add"))
 
     if is_math:
         if simulate_initial_bug:
@@ -201,7 +201,10 @@ def make_coder_node(
             code_files = _synthesize_initial_code(
                 state["user_requirement"], simulate_initial_bug=False
             )
-            msg = f"Coder: Applying self-correction patch based on QA traceback (Retry #{retry_count})."
+            msg = (
+                "Coder: Applying self-correction patch based on QA traceback "
+                f"(Retry #{retry_count})."
+            )
         else:
             # Initial implementation
             code_files = _synthesize_initial_code(
@@ -315,7 +318,10 @@ def make_qa_node(
             # If code failed, remove code from completed_tasks so it can be re-executed
             if "code" in completed:
                 completed.remove("code")
-            msg = f"QA: Tests FAILED on attempt {retry_count}. Extracted traceback for self-correction."
+            msg = (
+                f"QA: Tests FAILED on attempt {retry_count}. "
+                "Extracted traceback for self-correction."
+            )
             error_msg = clean_traceback
             test_results = f"FAILED:\n{clean_traceback}"
             next_phase = PHASE_FAILED
@@ -434,9 +440,7 @@ def create_company_workflow(
         "coder",
         cast(
             Any,
-            make_coder_node(
-                project_root_getter, simulate_initial_bug=simulate_initial_bug
-            ),
+            make_coder_node(project_root_getter, simulate_initial_bug=simulate_initial_bug),
         ),
     )
     workflow.add_node("devops", cast(Any, make_devops_node(project_root_getter)))

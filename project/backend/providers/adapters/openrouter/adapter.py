@@ -9,7 +9,13 @@ from typing import Any
 from app.domain.models import ExecutionTask, ProviderCapabilities
 
 from providers.adapters.openrouter import mapping
-from providers.kit import Delta, HttpRequest, HttpStreamingRunner, StreamState
+from providers.kit import (
+    Delta,
+    HttpRequest,
+    HttpStreamingRunner,
+    ResolvedExecutionPlan,
+    StreamState,
+)
 
 
 class OpenRouterProvider(HttpStreamingRunner):
@@ -32,8 +38,14 @@ class OpenRouterProvider(HttpStreamingRunner):
     def auth_headers(self, api_key: str) -> dict[str, str]:
         return {"Authorization": f"Bearer {api_key}"}
 
-    def build_request(self, task: ExecutionTask, model: str) -> HttpRequest:
-        return mapping.build_request(task, model, self.config.options)
+    def build_request(
+        self,
+        task: ExecutionTask,
+        model: str,
+        *,
+        plan: ResolvedExecutionPlan | None = None,
+    ) -> HttpRequest:
+        return mapping.build_request(task, model, self.config.options, plan=plan)
 
     def parse_chunk(
         self, event: str, payload: Mapping[str, Any], state: StreamState

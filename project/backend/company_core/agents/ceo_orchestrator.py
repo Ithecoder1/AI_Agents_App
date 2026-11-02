@@ -36,9 +36,7 @@ class CeoOrchestratorAgent(BaseCompanyAgent):
             log_msg = "CEO: Analyzing user requirement; dispatching task to Software Architect."
         elif "code" not in completed or not state.get("code_files"):
             next_phase = PHASE_CODER
-            log_msg = (
-                "CEO: Architecture approved; routing execution to Software Engineer."
-            )
+            log_msg = "CEO: Architecture approved; routing execution to Software Engineer."
         elif "devops" not in completed:
             next_phase = PHASE_DEVOPS
             log_msg = "CEO: Code implemented; routing to DevOps Engineer for test harness setup."

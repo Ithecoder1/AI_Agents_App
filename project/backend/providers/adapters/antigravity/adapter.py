@@ -7,12 +7,11 @@ dynamic schema decoupling, lean session bootstrapping, and real-time semantic st
 from __future__ import annotations
 
 import asyncio
-import json
 import shutil
 from collections.abc import AsyncIterator
 from pathlib import Path
 
-from app.domain.enums import EventType
+from app.domain.enums import EventType, ExecutionMode
 from app.domain.errors import (
     ExecutionCancelledError,
     InvalidRequestError,
@@ -26,30 +25,17 @@ from app.domain.models import (
     HealthStatus,
     ProviderCapabilities,
     StreamEvent,
-    Usage,
 )
 from app.domain.ports.agent_provider import ProviderDeps
+from app.domain.tools import ToolDescriptor, ToolRetrievalPolicy
 
+from providers.adapters.antigravity.command import AntigravityCommandBuilder
+from providers.adapters.antigravity.stream import AntigravityStreamParser
 from providers.kit import BaseAgentRunner
-
-WRITE_TOOLS: frozenset[str] = frozenset(
-    {
-        "edit_file",
-        "write_file",
-        "write_to_file",
-        "replace_file_content",
-        "multi_replace_file_content",
-        "create_file",
-    }
-)
 
 
 class AntigravityProvider(BaseAgentRunner):
-    """Adapter executing agent sessions via local Antigravity CLI (`agy -p`).
-
-    Adheres to Clean Architecture: depends only on `app.domain` and `providers.kit`.
-    Implements Dynamic Tool Retrieval to avoid upfront 60-tool schema injection.
-    """
+    """Adapter executing agent sessions via local Antigravity CLI (`agy -p`)."""
 
     default_capabilities = ProviderCapabilities(
         streaming=True,
@@ -69,6 +55,7 @@ class AntigravityProvider(BaseAgentRunner):
             Path(p).resolve() for p in options.get("allowed_workspaces", [])
         ]
         self._running_processes: dict[str, asyncio.subprocess.Process] = {}
+        self._parser = AntigravityStreamParser(event_factory=self.event)
 
     async def health_check(self) -> HealthStatus:
         """Verify presence of local `agy` executable."""
@@ -89,7 +76,13 @@ class AntigravityProvider(BaseAgentRunner):
             except (TimeoutError, OSError):
                 proc.kill()
 
-    async def stream_execute(self, task: ExecutionTask) -> AsyncIterator[StreamEvent]:
+    async def stream_execute(
+        self,
+        task: ExecutionTask,
+        *,
+        active_tools: list[ToolDescriptor] | tuple[ToolDescriptor, ...] | None = None,
+        retrieval_policy: ToolRetrievalPolicy | None = None,
+    ) -> AsyncIterator[StreamEvent]:
         """Execute prompt via `agy -p` subprocess, yielding real-time semantic StreamEvents."""
         try:
             _system, turns = task.prompt_snapshot.render_messages()
@@ -97,10 +90,8 @@ class AntigravityProvider(BaseAgentRunner):
         except ValidationError as exc:
             raise InvalidRequestError(str(exc), provider_id=self.config.id) from exc
 
-        # Resolve executable
         executable = shutil.which(self._executable) or shutil.which("agy") or self._executable
 
-        # Workspace security check
         target_cwd = Path.cwd()
         if task.workspace:
             ws_path = Path(task.workspace).resolve()  # noqa: ASYNC240
@@ -115,52 +106,17 @@ class AntigravityProvider(BaseAgentRunner):
                 )
             target_cwd = ws_path
 
-        # Determine tool mode (Agent Capability Triage)
-        # If prompt is a direct QA question or explicitly flagged as text-only,
-        # run in lean mode without tool injection.
-        is_direct_qa = bool(
-            task.params.extra.get("direct_qa")
-            or "direct_qa" in user_prompt.lower()
-            or task.prompt_snapshot.system_instructions.startswith("DIRECT_QA:")
+        plan = self.resolve_execution_plan(
+            task,
+            active_tools=active_tools,
+            retrieval_policy=retrieval_policy,
         )
+        is_direct_qa = (plan.mode == ExecutionMode.DIRECT_QA) or plan.suppress_tools
+        target_tools = {t.name for t in plan.tools}
 
-        mode = task.params.extra.get("mode")
-        raw_tools = task.params.extra.get("tools")
-        if isinstance(raw_tools, list):
-            requested_tools = [str(t).strip() for t in raw_tools if str(t).strip()]
-            tools_str = ", ".join(requested_tools)
-        elif isinstance(raw_tools, str) and raw_tools.strip():
-            requested_tools = [t.strip() for t in raw_tools.split(",") if t.strip()]
-            tools_str = raw_tools.strip()
-        else:
-            requested_tools = []
-            tools_str = ""
-        target_tools = set(requested_tools)
-        if not target_tools and tools_str.strip():
-            target_tools = {t.strip() for t in tools_str.split(",") if t.strip()}
-
-        # Prompt decoration & constraints
-        final_prompt = user_prompt
-        if is_direct_qa:
-            constraint = (
-                "[CONSTRAINT: Direct answer only. "
-                "Do NOT use any tools, file operations, or commands.]"
-            )
-            if constraint not in final_prompt:
-                final_prompt = f"{constraint}\n\n{final_prompt}"
-        elif target_tools:
-            whitelist_str = tools_str.strip() or ", ".join(sorted(target_tools))
-            boundary = (
-                f"[ALLOWED TOOLS STRICT WHITELIST: {whitelist_str}. "
-                "Calling any unlisted tool is strictly forbidden.]"
-            )
-            if boundary not in final_prompt:
-                final_prompt = f"{boundary}\n\n{final_prompt}"
-
-        # Build CLI command
-        cmd = [executable, "-p", final_prompt, "--output-format", "stream-json"]
-        if self._skip_permissions or task.params.extra.get("skip_permissions"):
-            cmd.append("--dangerously-skip-permissions")
+        final_prompt = AntigravityCommandBuilder.decorate_prompt(
+            user_prompt, is_direct_qa, target_tools
+        )
 
         raw_extra = (
             task.params.extra.get("extra_args") or task.params.extra.get("passthrough_args") or []
@@ -168,40 +124,18 @@ class AntigravityProvider(BaseAgentRunner):
         extra_args: list[str] = (
             [str(a) for a in raw_extra] if isinstance(raw_extra, list) else [str(raw_extra)]
         )
+        skip_perm = self._skip_permissions or bool(task.params.extra.get("skip_permissions"))
 
-        effort_flags: list[str] = []
-        if "--effort" not in extra_args:
-            effort_flags = ["--effort", "low"]
+        cmd = AntigravityCommandBuilder.build_command(
+            executable,
+            final_prompt,
+            is_direct_qa=is_direct_qa,
+            target_tools=target_tools,
+            skip_permissions=skip_perm,
+            extra_args=extra_args,
+            mode=task.params.extra.get("mode"),
+        )
 
-        has_write_tools = bool(target_tools & WRITE_TOOLS)
-
-        if is_direct_qa or (mode == "plan"):
-            cmd.extend(["--mode", "plan", "--disable-slash-commands", *effort_flags])
-        elif target_tools:
-            if not has_write_tools:
-                cmd.extend(["--mode", "plan", "--disable-slash-commands"])
-            else:
-                cmd.append("--disable-slash-commands")
-        elif mode:
-            cmd.extend(["--mode", str(mode)])
-
-        if extra_args:
-            i = 0
-            while i < len(extra_args):
-                arg = extra_args[i]
-                if (
-                    arg in ("--disable-slash-commands", "--dangerously-skip-permissions")
-                    and arg in cmd
-                ):
-                    i += 1
-                    continue
-                if arg in ("--mode", "--effort") and arg in cmd:
-                    i += 2
-                    continue
-                cmd.append(arg)
-                i += 1
-
-        # Yield initial status event
         mode_label = "direct_qa (0-tool)" if is_direct_qa else "dynamic_tools"
         yield self.event(
             task,
@@ -235,86 +169,10 @@ class AntigravityProvider(BaseAgentRunner):
 
         stderr_task = asyncio.create_task(drain_stderr())
 
-        input_tokens = 0
-        output_tokens = 0
-
         try:
             assert process.stdout is not None
-            async for raw_line in process.stdout:
-                line = raw_line.decode("utf-8", errors="replace").strip()
-                if not line:
-                    continue
-
-                try:
-                    payload = json.loads(line)
-                except json.JSONDecodeError:
-                    # Non-JSON or log line
-                    yield self.event(task, EventType.LOG, line=line)
-                    continue
-
-                event_name = payload.get("event")
-
-                if event_name == "init":
-                    init_meta = payload.get("init", {})
-                    conv_id = payload.get("conversation_id", "")
-                    yield self.event(
-                        task,
-                        EventType.STATUS,
-                        state="running",
-                        conversation_id=conv_id,
-                        tools_count=len(init_meta.get("tools", [])),
-                    )
-
-                elif event_name == "step_update":
-                    step = payload.get("step_update", {})
-                    step_type = step.get("step_type")
-                    state = step.get("state")
-
-                    # 1. Thought / Thinking tokens
-                    thought = (
-                        step.get("thought_delta")
-                        or step.get("thinking_delta")
-                        or step.get("thought")
-                    )
-                    if thought:
-                        yield self.event(task, EventType.THOUGHT, text=thought)
-
-                    # 2. Tool events
-                    if step_type == "tool":
-                        tool_info = step.get("tool_info", {})
-                        tool_name = step.get("tool_name") or tool_info.get("name", "tool")
-                        if state == "ACTIVE":
-                            yield self.event(
-                                task,
-                                EventType.TOOL_CALL,
-                                name=tool_name,
-                                args=tool_info.get("parameters", {}),
-                            )
-                        elif state == "DONE":
-                            yield self.event(
-                                task,
-                                EventType.TOOL_RESULT,
-                                name=tool_name,
-                                result=tool_info.get("output", ""),
-                            )
-
-                    # 3. Agent text response
-                    text_delta = step.get("text_delta")
-                    if text_delta:
-                        yield self.event(task, EventType.TOKEN, text=text_delta)
-
-                elif event_name == "result":
-                    res = payload.get("result", {})
-                    usage_data = res.get("usage", {})
-                    input_tokens = usage_data.get("input_tokens", 0)
-                    output_tokens = usage_data.get("output_tokens", 0)
-
-                    usage = Usage(
-                        prompt_tokens=input_tokens,
-                        completion_tokens=output_tokens,
-                        cost_usd=0.0,
-                    )
-                    yield self.event(task, EventType.USAGE, **usage.to_dict())
+            async for ev in self._parser.parse_stream(process.stdout, task):
+                yield ev
 
             await process.wait()
             await stderr_task

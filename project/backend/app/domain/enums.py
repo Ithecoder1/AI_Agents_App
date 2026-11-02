@@ -48,3 +48,11 @@ class ArtifactKind(str, Enum):
     FILE = "file"
     LOG = "log"
     JSON = "json"
+
+
+class ExecutionMode(str, Enum):
+    """Universal execution mode governing agent capability triage and tool injection."""
+
+    DIRECT_QA = "direct_qa"
+    DYNAMIC_JIT = "dynamic_jit"
+    FULL = "full"

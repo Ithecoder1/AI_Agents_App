@@ -10,10 +10,9 @@ import asyncio
 from collections.abc import AsyncIterator
 from pathlib import Path
 
-from app.domain.enums import ArtifactKind, EventType
+from app.domain.enums import EventType
 from app.domain.models import (
     AgentProviderConfig,
-    Artifact,
     ExecutionTask,
     HealthStatus,
     ProviderCapabilities,
@@ -21,9 +20,11 @@ from app.domain.models import (
     Usage,
 )
 from app.domain.ports.agent_provider import ProviderDeps
-
+from app.domain.tools import ToolDescriptor, ToolRetrievalPolicy
 from company_core.orchestrator import AutonomousStartupOrchestrator
 from company_core.state import PHASE_COMPLETED, CompanyState
+
+from providers.adapters.autonomous_orchestrator.event_mapper import StartupNodeEventMapper
 from providers.kit import BaseAgentRunner
 
 
@@ -55,7 +56,13 @@ class StartupOrchestratorProvider(BaseAgentRunner):
         except ImportError as exc:
             return HealthStatus.down(f"LangGraph not installed: {exc}")
 
-    async def stream_execute(self, task: ExecutionTask) -> AsyncIterator[StreamEvent]:
+    async def stream_execute(
+        self,
+        task: ExecutionTask,
+        *,
+        active_tools: list[ToolDescriptor] | tuple[ToolDescriptor, ...] | None = None,
+        retrieval_policy: ToolRetrievalPolicy | None = None,
+    ) -> AsyncIterator[StreamEvent]:
         """Stream autonomous startup orchestration events to the chat UI and WebSocket."""
         task_id = task.id
         attempt = task.attempt or 1
@@ -80,32 +87,15 @@ class StartupOrchestratorProvider(BaseAgentRunner):
             message="Autonomous Startup Orchestrator initializing...",
         )
 
-        # 2. Execution Plan Event
-        plan_steps = [
-            {
-                "title": "1. Architecture Blueprint Synthesis (Software Architect)",
-                "status": "in_progress",
-            },
-            {
-                "title": "2. Source Code & Test Implementation (Software Engineer)",
-                "status": "pending",
-            },
-            {
-                "title": "3. DevOps & Environment Preparation (DevOps Engineer)",
-                "status": "pending",
-            },
-            {
-                "title": "4. Quality Assurance & Automated Pytest (QA Engineer)",
-                "status": "pending",
-            },
-            {"title": "5. Final Delivery & Verification", "status": "pending"},
-        ]
+        mapper = StartupNodeEventMapper()
+
+        # 2. Initial Execution Plan Event
         yield StreamEvent.create(
             task_id,
             attempt,
             EventType.PLAN,
             summary="Autonomous Startup Multi-Agent Lifecycle",
-            steps=plan_steps,
+            steps=mapper.plan_steps,
         )
 
         # 3. Intro Token Output
@@ -136,193 +126,8 @@ class StartupOrchestratorProvider(BaseAgentRunner):
             reset_state=False,
         ):
             last_state = state_snapshot
-
-            if node_name == "ceo_router":
-                curr_phase = state_snapshot.get("current_phase")
-                yield StreamEvent.create(
-                    task_id,
-                    attempt,
-                    EventType.THOUGHT,
-                    text=f"CEO Orchestrator: Evaluated requirement. Roadmap phase: {curr_phase}.",
-                )
-                yield StreamEvent.create(
-                    task_id,
-                    attempt,
-                    EventType.STATUS,
-                    state="running",
-                    phase=state_snapshot.get("current_phase"),
-                )
-
-            elif node_name == "architect":
-                plan_steps[0]["status"] = "done"
-                plan_steps[1]["status"] = "in_progress"
-                yield StreamEvent.create(
-                    task_id,
-                    attempt,
-                    EventType.PLAN,
-                    summary="Autonomous Startup Multi-Agent Lifecycle",
-                    steps=plan_steps,
-                )
-
-                spec = state_snapshot.get("architecture_spec") or "No spec generated"
-                yield StreamEvent.create(
-                    task_id,
-                    attempt,
-                    EventType.THOUGHT,
-                    text="Software Architect: Synthesized modular architecture blueprint.",
-                )
-                yield StreamEvent.create(
-                    task_id,
-                    attempt,
-                    EventType.ARTIFACT,
-                    **Artifact(
-                        name="architecture_spec.md",
-                        kind=ArtifactKind.FILE,
-                        mime="text/markdown",
-                        size=len(spec),
-                        inline_content=spec,
-                    ).to_dict(),
-                )
-                yield StreamEvent.create(
-                    task_id,
-                    attempt,
-                    EventType.TOKEN,
-                    text="#### 🏛️ Phase 1: Architecture Specification Synthesized\n"
-                    "- Blueprint documented and saved to `architecture_spec.md`.\n\n",
-                )
-
-            elif node_name == "coder":
-                plan_steps[1]["status"] = "done"
-                plan_steps[2]["status"] = "in_progress"
-                yield StreamEvent.create(
-                    task_id,
-                    attempt,
-                    EventType.PLAN,
-                    summary="Autonomous Startup Multi-Agent Lifecycle",
-                    steps=plan_steps,
-                )
-
-                code_files = state_snapshot.get("code_files") or {}
-                retries = state_snapshot.get("retry_count", 0)
-
-                if retries > 0:
-                    yield StreamEvent.create(
-                        task_id,
-                        attempt,
-                        EventType.THOUGHT,
-                        text=f"Software Engineer: Applying self-correction (Attempt #{retries}).",
-                    )
-                else:
-                    yield StreamEvent.create(
-                        task_id,
-                        attempt,
-                        EventType.THOUGHT,
-                        text=f"Software Engineer: Implemented {len(code_files)} files & tests.",
-                    )
-
-                # Emit generated files as artifacts for UI inspection
-                for filepath, content in code_files.items():
-                    yield StreamEvent.create(
-                        task_id,
-                        attempt,
-                        EventType.ARTIFACT,
-                        **Artifact(
-                            name=filepath,
-                            kind=ArtifactKind.FILE,
-                            mime="text/x-python" if filepath.endswith(".py") else "text/plain",
-                            size=len(content),
-                            inline_content=content,
-                        ).to_dict(),
-                    )
-
-                file_list = ", ".join(f"`{f}`" for f in code_files)
-                yield StreamEvent.create(
-                    task_id,
-                    attempt,
-                    EventType.TOKEN,
-                    text=f"#### 💻 Phase 2: Source Code Implemented\n"
-                    f"- Generated files: {file_list}\n\n",
-                )
-
-            elif node_name == "devops":
-                plan_steps[2]["status"] = "done"
-                plan_steps[3]["status"] = "in_progress"
-                yield StreamEvent.create(
-                    task_id,
-                    attempt,
-                    EventType.PLAN,
-                    summary="Autonomous Startup Multi-Agent Lifecycle",
-                    steps=plan_steps,
-                )
-
-                yield StreamEvent.create(
-                    task_id,
-                    attempt,
-                    EventType.THOUGHT,
-                    text="DevOps Engineer: Configured requirements.txt and pytest runner harness.",
-                )
-                yield StreamEvent.create(
-                    task_id,
-                    attempt,
-                    EventType.TOKEN,
-                    text="#### ⚙️ Phase 3: DevOps Environment Configured\n"
-                    "- Test harness and dependencies configured.\n\n",
-                )
-
-            elif node_name == "qa":
-                test_results = state_snapshot.get("test_results") or ""
-                passed = "PASSED" in test_results
-
-                if passed:
-                    plan_steps[3]["status"] = "done"
-                    plan_steps[4]["status"] = "done"
-                    yield StreamEvent.create(
-                        task_id,
-                        attempt,
-                        EventType.THOUGHT,
-                        text="Quality Assurance: Automated pytest suite PASSED all assertions!",
-                    )
-                else:
-                    yield StreamEvent.create(
-                        task_id,
-                        attempt,
-                        EventType.THOUGHT,
-                        text=f"Quality Assurance: Tests failed: {test_results[:50]}...",
-                    )
-
-                yield StreamEvent.create(
-                    task_id,
-                    attempt,
-                    EventType.PLAN,
-                    summary="Autonomous Startup Multi-Agent Lifecycle",
-                    steps=plan_steps,
-                )
-
-                yield StreamEvent.create(
-                    task_id,
-                    attempt,
-                    EventType.LOG,
-                    text=test_results,
-                    stream="stdout" if passed else "stderr",
-                )
-
-            elif node_name == "task_decomposer":
-                yield StreamEvent.create(
-                    task_id,
-                    attempt,
-                    EventType.THOUGHT,
-                    text="Technical Lead: Decomposed failing component into atomic subtasks.",
-                )
-                yield StreamEvent.create(
-                    task_id,
-                    attempt,
-                    EventType.TOKEN,
-                    text=(
-                        "> ⚠️ **Dynamic Task Decomposition Triggered**: "
-                        "Monolithic component broken into sub-tasks.\n\n"
-                    ),
-                )
-
+            for ev in mapper.map_node(task_id, attempt, node_name, state_snapshot):
+                yield ev
             await asyncio.sleep(0.01)
 
         # Final Delivery Summary

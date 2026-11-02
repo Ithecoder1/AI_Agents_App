@@ -6,8 +6,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 import yaml
-
-
 from app.domain.tools import ToolRetrievalPolicy
 
 
@@ -29,9 +27,7 @@ class AgentConfig:
     system_prompt: str
     context_policy: ContextPolicy = field(default_factory=ContextPolicy)
     tools: tuple[str, ...] = ()
-    tool_policy: ToolRetrievalPolicy = field(
-        default_factory=ToolRetrievalPolicy.tool_less
-    )
+    tool_policy: ToolRetrievalPolicy = field(default_factory=ToolRetrievalPolicy.tool_less)
 
     @property
     def is_tool_less(self) -> bool:
@@ -80,12 +76,8 @@ class ConfigManager:
         agents_path: Path | str | None = None,
         tasks_path: Path | str | None = None,
     ) -> None:
-        self._agents_path = (
-            Path(agents_path) if agents_path else _locate_config_file("agents.yaml")
-        )
-        self._tasks_path = (
-            Path(tasks_path) if tasks_path else _locate_config_file("tasks.yaml")
-        )
+        self._agents_path = Path(agents_path) if agents_path else _locate_config_file("agents.yaml")
+        self._tasks_path = Path(tasks_path) if tasks_path else _locate_config_file("tasks.yaml")
         self._agents: dict[str, AgentConfig] = {}
         self._workflow: WorkflowConfig = WorkflowConfig()
         self.reload()
@@ -99,20 +91,14 @@ class ConfigManager:
                 policy_dict = val.get("context_policy", {})
                 policy = ContextPolicy(
                     include_full_code=policy_dict.get("include_full_code", False),
-                    include_summarized_code=policy_dict.get(
-                        "include_summarized_code", False
-                    ),
+                    include_summarized_code=policy_dict.get("include_summarized_code", False),
                     include_architecture_summary=policy_dict.get(
                         "include_architecture_summary", True
                     ),
                     include_error_trace=policy_dict.get("include_error_trace", True),
                 )
                 raw_tools = val.get("tools")
-                tools_tuple = (
-                    tuple(raw_tools)
-                    if isinstance(raw_tools, (list, tuple))
-                    else ()
-                )
+                tools_tuple = tuple(raw_tools) if isinstance(raw_tools, (list, tuple)) else ()
                 raw_tp = val.get("tool_policy") or {}
                 if raw_tp or tools_tuple:
                     is_enabled = bool(raw_tp.get("enabled", bool(tools_tuple)))
@@ -121,9 +107,7 @@ class ConfigManager:
                         "base_tools",
                         ["search_available_tools"] if is_enabled else [],
                     )
-                    base_tuple = (
-                        tuple(raw_base) if isinstance(raw_base, (list, tuple)) else ()
-                    )
+                    base_tuple = tuple(raw_base) if isinstance(raw_base, (list, tuple)) else ()
                     t_policy = ToolRetrievalPolicy(
                         enabled=is_enabled,
                         max_active_tools=max_act,
@@ -152,22 +136,14 @@ class ConfigManager:
             self._workflow = WorkflowConfig(
                 max_retries=int(wf.get("max_retries", 3)),
                 checkpoint_path=wf.get("checkpoint_path", "logs/company_state.json"),
-                project_root_template=wf.get(
-                    "project_root_template", "projects/{project_id}"
-                ),
+                project_root_template=wf.get("project_root_template", "projects/{project_id}"),
                 token_economy=TokenEconomyConfig(
-                    max_prompt_lines_per_file=int(
-                        te.get("max_prompt_lines_per_file", 50)
-                    ),
-                    strip_comments_in_summary=bool(
-                        te.get("strip_comments_in_summary", True)
-                    ),
+                    max_prompt_lines_per_file=int(te.get("max_prompt_lines_per_file", 50)),
+                    strip_comments_in_summary=bool(te.get("strip_comments_in_summary", True)),
                     exclude_test_files_from_coder_context=bool(
                         te.get("exclude_test_files_from_coder_context", False)
                     ),
-                    truncate_traceback_lines=int(
-                        te.get("truncate_traceback_lines", 40)
-                    ),
+                    truncate_traceback_lines=int(te.get("truncate_traceback_lines", 40)),
                 ),
             )
 

@@ -47,6 +47,7 @@ from app.domain.models import (
     Usage,
 )
 from app.domain.ports.agent_provider import ProviderDeps
+from app.domain.tools import ToolDescriptor, ToolRetrievalPolicy
 
 from providers.kit import BaseAgentRunner
 
@@ -134,7 +135,13 @@ class FakeProvider(BaseAgentRunner):
             retry_after=self._retry_after,
         )
 
-    async def stream_execute(self, task: ExecutionTask) -> AsyncIterator[StreamEvent]:
+    async def stream_execute(
+        self,
+        task: ExecutionTask,
+        *,
+        active_tools: list[ToolDescriptor] | tuple[ToolDescriptor, ...] | None = None,
+        retrieval_policy: ToolRetrievalPolicy | None = None,
+    ) -> AsyncIterator[StreamEvent]:
         cancel = asyncio.Event()
         self._cancel_events[task.id] = cancel
         try:

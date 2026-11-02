@@ -11,8 +11,11 @@ import argparse
 import sys
 from pathlib import Path
 
-# Ensure workspace root is on sys.path
+# Ensure backend and workspace root are on sys.path
 WORKSPACE_ROOT = Path(__file__).resolve().parent
+BACKEND_ROOT = WORKSPACE_ROOT / "project" / "backend"
+if str(BACKEND_ROOT) not in sys.path:
+    sys.path.insert(0, str(BACKEND_ROOT))
 if str(WORKSPACE_ROOT) not in sys.path:
     sys.path.insert(0, str(WORKSPACE_ROOT))
 

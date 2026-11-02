@@ -6,8 +6,16 @@ import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from app.domain.enums import EventType
-from app.domain.models import AgentProviderConfig
+from app.domain.enums import EventType, ExecutionMode
+from app.domain.models import (
+    AgentProviderConfig,
+    MetricsEvent,
+    TextDeltaEvent,
+    ThoughtEvent,
+    ToolCallEvent,
+    ToolResultEvent,
+)
+from app.domain.tools import ToolDescriptor
 from providers.adapters.antigravity import AntigravityProvider
 
 from tests.factories import make_deps, running_task
@@ -232,3 +240,72 @@ async def test_passthrough_arguments_forwarded() -> None:
         call_args = mock_exec.call_args[0]
         assert "--new-project" in call_args
         assert "--disable-slash-commands" in call_args
+
+
+@pytest.mark.asyncio
+async def test_universal_active_tools_contract() -> None:
+    provider = _make_provider(executable="agy")
+    task = running_task(
+        user="read file",
+        execution_mode=ExecutionMode.DYNAMIC_JIT,
+        active_tools=(ToolDescriptor("read_file", "fs", "Read file"),),
+    )
+
+    mock_process = MagicMock()
+    mock_process.returncode = 0
+    mock_process.stdout = asyncio.StreamReader()
+    mock_process.stdout.feed_data(b'{"event":"result","result":{"status":"SUCCESS"}}\n')
+    mock_process.stdout.feed_eof()
+    mock_process.stderr = asyncio.StreamReader()
+    mock_process.stderr.feed_eof()
+    mock_process.wait = AsyncMock(return_value=0)
+
+    with patch("asyncio.create_subprocess_exec", return_value=mock_process) as mock_exec:
+        _ = [e async for e in provider.stream_execute(task)]
+        assert mock_exec.called
+        call_args = mock_exec.call_args[0]
+        assert "--mode" in call_args
+        assert "plan" in call_args
+        assert "--disable-slash-commands" in call_args
+        assert any("[ALLOWED TOOLS STRICT WHITELIST: read_file." in str(a) for a in call_args)
+
+
+@pytest.mark.asyncio
+async def test_antigravity_telemetry_observer() -> None:
+    provider = _make_provider(executable="agy")
+    seen_telemetry: list[object] = []
+    provider.add_observer(seen_telemetry.append)
+
+    task = running_task(user="observe session")
+
+    ndjson_lines = [
+        b'{"event":"step_update","step_update":{"step_type":"agent_response",'
+        b'"thought_delta":"pondering"}}\n',
+        b'{"event":"step_update","step_update":{"step_type":"tool","state":"ACTIVE",'
+        b'"tool_name":"view_file","tool_info":{"parameters":{"path":"a.py"}}}}\n',
+        b'{"event":"step_update","step_update":{"step_type":"tool","state":"DONE",'
+        b'"tool_name":"view_file","tool_info":{"output":"done"}}}\n',
+        b'{"event":"step_update","step_update":{"step_type":"agent_response",'
+        b'"text_delta":"result text"}}\n',
+        b'{"event":"result","result":{"status":"SUCCESS",'
+        b'"usage":{"input_tokens":50,"output_tokens":10}}}\n',
+    ]
+    mock_process = MagicMock()
+    mock_process.returncode = 0
+    mock_process.stdout = asyncio.StreamReader()
+    for line in ndjson_lines:
+        mock_process.stdout.feed_data(line)
+    mock_process.stdout.feed_eof()
+    mock_process.stderr = asyncio.StreamReader()
+    mock_process.stderr.feed_eof()
+    mock_process.wait = AsyncMock(return_value=0)
+
+    with patch("asyncio.create_subprocess_exec", return_value=mock_process):
+        _ = [e async for e in provider.stream_execute(task)]
+
+    event_types = [type(e) for e in seen_telemetry]
+    assert ThoughtEvent in event_types
+    assert ToolCallEvent in event_types
+    assert ToolResultEvent in event_types
+    assert TextDeltaEvent in event_types
+    assert MetricsEvent in event_types

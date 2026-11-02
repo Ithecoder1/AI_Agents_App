@@ -18,7 +18,6 @@ import json
 import time
 from abc import abstractmethod
 from collections.abc import AsyncIterator, Iterable, Mapping
-from dataclasses import dataclass, field
 from typing import Any, ClassVar
 
 import httpx
@@ -37,9 +36,9 @@ from app.domain.models import (
     HealthStatus,
     ProviderCapabilities,
     StreamEvent,
-    Usage,
 )
 from app.domain.ports.agent_provider import ProviderDeps
+from app.domain.tools import ToolDescriptor, ToolRetrievalPolicy
 
 from providers.kit.base import BaseAgentRunner
 from providers.kit.http_errors import (
@@ -48,36 +47,8 @@ from providers.kit.http_errors import (
     parse_retry_after,
     translate_httpx_error,
 )
+from providers.kit.http_types import Delta, HttpRequest, StreamState
 from providers.kit.sse import iter_sse
-
-#: ``(EventType.THOUGHT | EventType.TOKEN, text)``
-Delta = tuple[EventType, str]
-
-
-@dataclass(frozen=True, slots=True)
-class HttpRequest:
-    path: str
-    json: Mapping[str, Any] = field(default_factory=dict)
-    headers: Mapping[str, str] = field(default_factory=dict)
-    params: Mapping[str, str] = field(default_factory=dict)
-    method: str = "POST"
-
-
-@dataclass(slots=True)
-class StreamState:
-    """Scratch space a ``parse_chunk`` implementation updates while a stream is consumed."""
-
-    finish_reason: str | None = None
-    prompt_tokens: int = 0
-    completion_tokens: int = 0
-    cost_usd: float | None = None
-
-    @property
-    def has_usage(self) -> bool:
-        return bool(self.prompt_tokens or self.completion_tokens or self.cost_usd)
-
-    def to_usage(self) -> Usage:
-        return Usage(self.prompt_tokens, self.completion_tokens, self.cost_usd)
 
 
 class HttpStreamingRunner(BaseAgentRunner):
@@ -187,7 +158,13 @@ class HttpStreamingRunner(BaseAgentRunner):
             raise TransientProviderError("unexpected stream chunk", provider_id=self.config.id)
         return payload
 
-    async def stream_execute(self, task: ExecutionTask) -> AsyncIterator[StreamEvent]:
+    async def stream_execute(
+        self,
+        task: ExecutionTask,
+        *,
+        active_tools: list[ToolDescriptor] | tuple[ToolDescriptor, ...] | None = None,
+        retrieval_policy: ToolRetrievalPolicy | None = None,
+    ) -> AsyncIterator[StreamEvent]:
         provider_id = self.config.id
         api_key = self._api_key()
         if not api_key:
@@ -200,11 +177,19 @@ class HttpStreamingRunner(BaseAgentRunner):
         state = StreamState()
         try:
             yield self.event(task, EventType.STATUS, state="started", provider=provider_id)
+            plan = self.resolve_execution_plan(
+                task,
+                active_tools=active_tools,
+                retrieval_policy=retrieval_policy,
+            )
             try:
                 model = task.params.model
                 if not model or model.strip().lower() in ("default", "none", "null"):
                     model = self._default_model
-                request = self.build_request(task, model)
+                try:
+                    request = self.build_request(task, model, plan=plan)  # type: ignore[call-arg]
+                except TypeError:
+                    request = self.build_request(task, model)
             except ValidationError as exc:
                 raise InvalidRequestError(str(exc), provider_id=provider_id) from exc
 

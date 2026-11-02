@@ -17,8 +17,11 @@ from app.infrastructure.persistence import (
 )
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-# Ensure workspace root is discoverable for company_core imports
+# Ensure backend and workspace root are discoverable for company_core and cli imports
 _WORKSPACE_ROOT = Path(__file__).resolve().parents[2]
+_BACKEND_ROOT = _WORKSPACE_ROOT / "project" / "backend"
+if str(_BACKEND_ROOT) not in sys.path:
+    sys.path.insert(0, str(_BACKEND_ROOT))
 if str(_WORKSPACE_ROOT) not in sys.path:
     sys.path.insert(0, str(_WORKSPACE_ROOT))
 

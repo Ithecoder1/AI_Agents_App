@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Mapping
 from typing import Any
 
@@ -12,13 +13,20 @@ from app.domain.models import ExecutionTask
 from providers.kit import (
     Delta,
     HttpRequest,
+    ResolvedExecutionPlan,
     StreamState,
     error_from_status,
 )
 from providers.kit.params import resolve_param
 
 
-def build_request(task: ExecutionTask, model: str, options: Mapping[str, Any]) -> HttpRequest:
+def build_request(
+    task: ExecutionTask,
+    model: str,
+    options: Mapping[str, Any],
+    *,
+    plan: ResolvedExecutionPlan | None = None,
+) -> HttpRequest:
     system, turns = task.prompt_snapshot.render_messages()
     messages: list[dict[str, str]] = []
     if system:
@@ -32,6 +40,23 @@ def build_request(task: ExecutionTask, model: str, options: Mapping[str, Any]) -
         "stream": True,
         "usage": {"include": True},
     }
+
+    # Universal tool suppression: only inject tools if not suppressed by plan
+    if plan is not None and not plan.suppress_tools and plan.tools:
+        body["tools"] = [
+            {
+                "type": "function",
+                "function": {
+                    "name": t.name,
+                    "description": t.summary,
+                    "parameters": dict(t.schema)
+                    if t.schema
+                    else {"type": "object", "properties": {}},
+                },
+            }
+            for t in plan.tools
+        ]
+
     params = task.params
     if params.temperature is not None:
         body["temperature"] = params.temperature
@@ -84,6 +109,12 @@ def parse_chunk(payload: Mapping[str, Any], state: StreamState, provider_id: str
         content = delta.get("content")
         if content:
             deltas.append((EventType.TOKEN, str(content)))
+        tool_calls = delta.get("tool_calls") or []
+        for tc in tool_calls:
+            fn = tc.get("function") or {}
+            fn_name = str(fn.get("name") or "tool")
+            fn_args = fn.get("arguments") or ""
+            deltas.append((EventType.TOOL_CALL, json.dumps({"name": fn_name, "args": fn_args})))
         finish = choice.get("finish_reason")
         if finish:
             if finish == "content_filter":

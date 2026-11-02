@@ -16,6 +16,7 @@ from app.domain.models import (
     StreamEvent,
 )
 from app.domain.ports.secrets import SecretResolver
+from app.domain.tools import ToolDescriptor, ToolRetrievalPolicy
 
 
 @runtime_checkable
@@ -39,9 +40,21 @@ class IAgentProvider(Protocol):
     @property
     def capabilities(self) -> ProviderCapabilities: ...
 
-    async def execute(self, task: ExecutionTask) -> ExecutionResult: ...
+    async def execute(
+        self,
+        task: ExecutionTask,
+        *,
+        active_tools: list[ToolDescriptor] | tuple[ToolDescriptor, ...] | None = None,
+        retrieval_policy: ToolRetrievalPolicy | None = None,
+    ) -> ExecutionResult: ...
 
-    def stream_execute(self, task: ExecutionTask) -> AsyncIterator[StreamEvent]: ...
+    def stream_execute(
+        self,
+        task: ExecutionTask,
+        *,
+        active_tools: list[ToolDescriptor] | tuple[ToolDescriptor, ...] | None = None,
+        retrieval_policy: ToolRetrievalPolicy | None = None,
+    ) -> AsyncIterator[StreamEvent]: ...
 
     async def health_check(self) -> HealthStatus: ...
 

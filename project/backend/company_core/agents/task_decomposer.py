@@ -31,7 +31,9 @@ class TaskDecomposerAgent(BaseCompanyAgent):
 
         logs = self.log_event(
             state,
-            message="Tech Lead: Max retries exceeded. Decomposed monolithic component into subtasks.",
+            message=(
+                "Tech Lead: Max retries exceeded. Decomposed monolithic component into subtasks."
+            ),
             details={"decomposed_items_count": 3, "previous_retries": retry_count},
         )
 

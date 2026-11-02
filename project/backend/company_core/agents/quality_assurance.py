@@ -67,10 +67,12 @@ class QualityAssuranceAgent(BaseCompanyAgent):
         else:
             retry_count += 1
             failed.append(f"qa_attempt_{retry_count}")
-            # If code failed, allow code task to be re-validated
             if "code" in completed:
                 completed.remove("code")
-            msg = f"QA: Tests FAILED on attempt {retry_count}. Extracted traceback for self-correction."
+            msg = (
+                f"QA: Tests FAILED on attempt {retry_count}. "
+                "Extracted traceback for self-correction."
+            )
             error_msg = clean_traceback
             test_results = f"FAILED:\n{clean_traceback}"
             next_phase = PHASE_FAILED

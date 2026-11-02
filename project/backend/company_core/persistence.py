@@ -40,9 +40,7 @@ def save_company_state(state: CompanyState, filepath: Path | str | None = None) 
 
     # Atomic write via temp file + replace
     temp_dir = path.parent
-    with tempfile.NamedTemporaryFile(
-        "w", dir=temp_dir, delete=False, encoding="utf-8"
-    ) as tf:
+    with tempfile.NamedTemporaryFile("w", dir=temp_dir, delete=False, encoding="utf-8") as tf:
         tf.write(payload)
         temp_name = tf.name
 
@@ -116,7 +114,10 @@ def hydrate_resumed_state(state: CompanyState) -> CompanyState:
         state.get("execution_logs") or [],
         agent="system",
         phase=next_phase,
-        message=f"Resuming execution from incomplete phase: {next_phase}. Skipping completed: {state.get('completed_tasks')}",
+        message=(
+            f"Resuming execution from incomplete phase: {next_phase}. "
+            f"Skipping completed: {state.get('completed_tasks')}"
+        ),
     )
     resumed = CompanyState(
         project_id=state["project_id"],
@@ -135,7 +136,7 @@ def hydrate_resumed_state(state: CompanyState) -> CompanyState:
 
 
 class JsonStateCheckpointer(MemorySaver):
-    """LangGraph Checkpointer that mirrors state checkpoints to logs/company_state.json after every step."""
+    """LangGraph Checkpointer that mirrors state checkpoints to json after every step."""
 
     def __init__(self, log_path: Path | str | None = None) -> None:
         super().__init__()
@@ -169,9 +170,7 @@ class JsonStateCheckpointer(MemorySaver):
         state_candidate = None
         if "company_state" in channel_values:
             state_candidate = channel_values["company_state"]
-        elif channel_values and any(
-            k in channel_values for k in ("project_id", "current_phase")
-        ):
+        elif channel_values and any(k in channel_values for k in ("project_id", "current_phase")):
             state_candidate = channel_values
 
         if isinstance(state_candidate, dict) and "project_id" in state_candidate:

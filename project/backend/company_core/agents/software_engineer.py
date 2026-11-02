@@ -55,7 +55,10 @@ class SoftwareEngineerAgent(BaseCompanyAgent):
                 requirement=state["user_requirement"],
                 error_context=error_msg,
             )
-            log_msg = f"Coder: Applying self-correction patch based on QA traceback (Retry #{retry_count})."
+            log_msg = (
+                "Coder: Applying self-correction patch based on QA traceback "
+                f"(Retry #{retry_count})."
+            )
         else:
             code_files = self.synthesize_code(
                 requirement=state["user_requirement"],

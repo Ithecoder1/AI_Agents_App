@@ -30,9 +30,7 @@ class CompanyState(TypedDict):
 
     project_id: str
     user_requirement: str
-    current_phase: (
-        str  # "ARCHITECT" | "CODER" | "QA" | "DEVOPS" | "COMPLETED" | "FAILED"
-    )
+    current_phase: str  # "ARCHITECT" | "CODER" | "QA" | "DEVOPS" | "COMPLETED" | "FAILED"
     architecture_spec: str | None
     code_files: dict[str, str]  # filepath -> file content
     test_results: str | None
@@ -50,7 +48,7 @@ def create_initial_state(
     initial_phase: str = PHASE_ARCHITECT,
 ) -> CompanyState:
     """Factory helper to build a clean CompanyState instance."""
-    now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()  # noqa: UP017
+    now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
     return CompanyState(
         project_id=project_id,
         user_requirement=user_requirement.strip(),
@@ -63,7 +61,10 @@ def create_initial_state(
                 "timestamp": now_iso,
                 "agent": "system",
                 "phase": initial_phase,
-                "message": f"Initialized project {project_id!r} with requirement: {user_requirement[:80]!r}",
+                "message": (
+                    f"Initialized project {project_id!r} with requirement: "
+                    f"{user_requirement[:80]!r}"
+                ),
             }
         ],
         completed_tasks=[],
@@ -82,7 +83,7 @@ def append_execution_log(
 ) -> list[dict[str, Any]]:
     """Return a new copy of execution_logs with an appended event entry."""
     entry: dict[str, Any] = {
-        "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),  # noqa: UP017
+        "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
         "agent": agent,
         "phase": phase,
         "message": message,

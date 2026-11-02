@@ -59,19 +59,13 @@ class AutonomousStartupOrchestrator:
         self.max_retries = (
             max_retries if max_retries is not None else self.config.workflow.max_retries
         )
-        self.checkpoint_path = Path(
-            checkpoint_path or self.config.workflow.checkpoint_path
-        )
-        self.checkpointer = checkpointer or JsonStateCheckpointer(
-            log_path=self.checkpoint_path
-        )
+        self.checkpoint_path = Path(checkpoint_path or self.config.workflow.checkpoint_path)
+        self.checkpointer = checkpointer or JsonStateCheckpointer(log_path=self.checkpoint_path)
         self.project_root_resolver = project_root_resolver
         self.simulate_initial_bug = simulate_initial_bug
 
         # Initialize agent workers
-        self.ceo_agent = ceo_agent or CeoOrchestratorAgent(
-            config=self.config.get_agent("ceo")
-        )
+        self.ceo_agent = ceo_agent or CeoOrchestratorAgent(config=self.config.get_agent("ceo"))
         self.architect_agent = architect_agent or SoftwareArchitectAgent(
             config=self.config.get_agent("architect")
         )
@@ -161,16 +155,12 @@ class AutonomousStartupOrchestrator:
         if reset_state and self.checkpoint_path.is_file():
             self.checkpoint_path.unlink()
 
-        persisted = (
-            load_company_state(self.checkpoint_path) if resume_if_possible else None
-        )
+        persisted = load_company_state(self.checkpoint_path) if resume_if_possible else None
 
         if persisted and can_resume(persisted):
             return hydrate_resumed_state(persisted)
 
-        return create_initial_state(
-            user_requirement=user_requirement, project_id=project_id
-        )
+        return create_initial_state(user_requirement=user_requirement, project_id=project_id)
 
     def run(
         self,
@@ -220,9 +210,7 @@ class AutonomousStartupOrchestrator:
 
         # Run node generator in executor to bridge synchronous LangGraph runner
         def _get_stream() -> Any:
-            return compiled_graph.stream(
-                initial_state, config=config, stream_mode="updates"
-            )
+            return compiled_graph.stream(initial_state, config=config, stream_mode="updates")
 
         stream = await loop.run_in_executor(None, _get_stream)
 
@@ -238,7 +226,8 @@ class AutonomousStartupOrchestrator:
         """Triage tool capabilities for an agent persona.
 
         - If agent has 0 tools or task_type == 'DIRECT_QA': bypass tool injection (pure text mode).
-        - If agent has tools and dynamic mode is enabled: inject minimal baseline (search_available_tools).
+        - If agent has tools and dynamic mode is enabled:
+          inject minimal baseline (search_available_tools).
         """
         agent_cfg = self.config.get_agent(agent_name)
         if task_type == "DIRECT_QA" or agent_cfg.is_tool_less:
@@ -257,4 +246,3 @@ class AutonomousStartupOrchestrator:
             "dynamic_retrieval_active": policy.enabled,
             "max_active_tools": policy.max_active_tools,
         }
-

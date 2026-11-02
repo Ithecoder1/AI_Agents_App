@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import os
 import subprocess
 import sys
@@ -38,10 +39,8 @@ def read_project_files(
             ):
                 continue
             rel = str(path.relative_to(target_dir)).replace("\\", "/")
-            try:
+            with contextlib.suppress(OSError):
                 result[rel] = path.read_text(encoding="utf-8")
-            except OSError:
-                pass
     return result
 
 
@@ -50,7 +49,10 @@ def summarize_code_for_context(
     max_lines_per_file: int = 50,
     strip_comments: bool = True,
 ) -> str:
-    """Token Hygiene: Render an outline/summary of project files instead of dumping entire codebases."""
+    """Token Hygiene: Render an outline/summary of project files.
+
+    Avoids dumping entire codebases into prompts.
+    """
     if not files:
         return "No code files implemented yet."
 
@@ -81,9 +83,7 @@ def summarize_code_for_context(
             key_lines.extend(tail)
             rendered = "\n".join(key_lines)
 
-        sections.append(
-            f"### File: {filepath} ({total_lines} lines)\n```python\n{rendered}\n```"
-        )
+        sections.append(f"### File: {filepath} ({total_lines} lines)\n```python\n{rendered}\n```")
 
     return "\n\n".join(sections)
 
@@ -106,11 +106,10 @@ def extract_clean_traceback(raw_output: str, max_lines: int = 40) -> str:
     else:
         # Look for traceback or assertion keywords
         filtered = [
-            l
-            for l in lines
+            line
+            for line in lines
             if any(
-                k in l
-                for k in ("Error", "AssertionError", "FAILED", "Traceback", "Exception")
+                k in line for k in ("Error", "AssertionError", "FAILED", "Traceback", "Exception")
             )
         ]
         extracted = filtered or lines[-max_lines:]
@@ -131,18 +130,8 @@ def run_pytest_suite(
     py = python_executable
     if not py:
         # Check current venv
-        venv_py = (
-            Path(__file__).resolve().parents[1]
-            / "project"
-            / "backend"
-            / ".venv"
-            / "Scripts"
-            / "python.exe"
-        )
-        if venv_py.is_file():
-            py = str(venv_py)
-        else:
-            py = sys.executable
+        venv_py = Path(__file__).resolve().parents[1] / ".venv" / "Scripts" / "python.exe"
+        py = str(venv_py) if venv_py.is_file() else sys.executable
 
     cmd = [py, "-m", "pytest", str(target_dir), "-v", "--tb=short"]
     try:

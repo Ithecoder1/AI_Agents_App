@@ -42,8 +42,10 @@ class DevOpsEngineerAgent(BaseCompanyAgent):
 
         devops_files = {
             "requirements.txt": "pytest>=7.0.0\n",
-            "pytest.ini": "[pytest]\npythonpath = .\ntestpaths = tests\n",
-            "README.md": f"# {state['project_id']}\n\nAutomated workspace built by LangGraph Autonomous Startup Orchestrator.\n",
+            "README.md": (
+                f"# {state['project_id']}\n\n"
+                "Automated workspace built by LangGraph Autonomous Startup Orchestrator.\n"
+            ),
         }
 
         # Persist environment files

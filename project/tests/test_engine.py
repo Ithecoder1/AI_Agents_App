@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pytest
+
 from app.engine import solve_arithmetic
 
 

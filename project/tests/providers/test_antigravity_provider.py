@@ -144,10 +144,91 @@ async def test_direct_qa_mode_bypasses_tool_injection() -> None:
         assert mock_exec.called
         call_args = mock_exec.call_args[0]
         assert "-p" in call_args
-        assert "DIRECT_QA: What is 2+2?" in call_args
+        assert any("DIRECT_QA: What is 2+2?" in str(a) for a in call_args)
+        assert any("[CONSTRAINT: Direct answer only" in str(a) for a in call_args)
+        assert "--mode" in call_args
+        assert "plan" in call_args
+        assert "--disable-slash-commands" in call_args
+        assert "--effort" in call_args
+        assert "low" in call_args
 
     status_event = next(e for e in events if e.type is EventType.STATUS)
     assert "direct_qa (0-tool)" in status_event.data.get("mode", "")
 
     tokens = [str(e.data.get("text", "")) for e in events if e.type is EventType.TOKEN]
     assert "".join(tokens) == "4"
+
+
+@pytest.mark.asyncio
+async def test_restricted_tools_maps_flags_and_decorates_prompt() -> None:
+    provider = _make_provider(executable="agy")
+    task = running_task(user="read the readme", extra={"tools": ["view_file"]})
+
+    mock_process = MagicMock()
+    mock_process.returncode = 0
+    mock_process.stdout = asyncio.StreamReader()
+    mock_process.stdout.feed_data(b'{"event":"result","result":{"status":"SUCCESS"}}\n')
+    mock_process.stdout.feed_eof()
+    mock_process.stderr = asyncio.StreamReader()
+    mock_process.stderr.feed_eof()
+    mock_process.wait = AsyncMock(return_value=0)
+
+    with patch("asyncio.create_subprocess_exec", return_value=mock_process) as mock_exec:
+        _ = [e async for e in provider.stream_execute(task)]
+        assert mock_exec.called
+        call_args = mock_exec.call_args[0]
+        assert "--mode" in call_args
+        assert "plan" in call_args
+        assert "--disable-slash-commands" in call_args
+        assert any("[ALLOWED TOOLS STRICT WHITELIST: view_file." in str(a) for a in call_args)
+
+
+@pytest.mark.asyncio
+async def test_write_tools_whitelist_allows_execution_mode() -> None:
+    provider = _make_provider(executable="agy")
+    task = running_task(user="edit the readme", extra={"tools": ["edit_file", "view_file"]})
+
+    mock_process = MagicMock()
+    mock_process.returncode = 0
+    mock_process.stdout = asyncio.StreamReader()
+    mock_process.stdout.feed_data(b'{"event":"result","result":{"status":"SUCCESS"}}\n')
+    mock_process.stdout.feed_eof()
+    mock_process.stderr = asyncio.StreamReader()
+    mock_process.stderr.feed_eof()
+    mock_process.wait = AsyncMock(return_value=0)
+
+    with patch("asyncio.create_subprocess_exec", return_value=mock_process) as mock_exec:
+        _ = [e async for e in provider.stream_execute(task)]
+        assert mock_exec.called
+        call_args = mock_exec.call_args[0]
+        # Since edit_file is a write tool in whitelist, --mode plan should NOT be forced
+        assert "--mode" not in call_args
+        assert "--disable-slash-commands" in call_args
+        assert any(
+            "[ALLOWED TOOLS STRICT WHITELIST: edit_file, view_file." in str(a) for a in call_args
+        )
+
+
+@pytest.mark.asyncio
+async def test_passthrough_arguments_forwarded() -> None:
+    provider = _make_provider(executable="agy")
+    task = running_task(
+        user="what is this?",
+        extra={"extra_args": ["--new-project", "--disable-slash-commands"]},
+    )
+
+    mock_process = MagicMock()
+    mock_process.returncode = 0
+    mock_process.stdout = asyncio.StreamReader()
+    mock_process.stdout.feed_data(b'{"event":"result","result":{"status":"SUCCESS"}}\n')
+    mock_process.stdout.feed_eof()
+    mock_process.stderr = asyncio.StreamReader()
+    mock_process.stderr.feed_eof()
+    mock_process.wait = AsyncMock(return_value=0)
+
+    with patch("asyncio.create_subprocess_exec", return_value=mock_process) as mock_exec:
+        _ = [e async for e in provider.stream_execute(task)]
+        assert mock_exec.called
+        call_args = mock_exec.call_args[0]
+        assert "--new-project" in call_args
+        assert "--disable-slash-commands" in call_args

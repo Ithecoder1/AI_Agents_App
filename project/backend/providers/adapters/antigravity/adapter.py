@@ -32,6 +32,17 @@ from app.domain.ports.agent_provider import ProviderDeps
 
 from providers.kit import BaseAgentRunner
 
+WRITE_TOOLS: frozenset[str] = frozenset(
+    {
+        "edit_file",
+        "write_file",
+        "write_to_file",
+        "replace_file_content",
+        "multi_replace_file_content",
+        "create_file",
+    }
+)
+
 
 class AntigravityProvider(BaseAgentRunner):
     """Adapter executing agent sessions via local Antigravity CLI (`agy -p`).
@@ -113,10 +124,82 @@ class AntigravityProvider(BaseAgentRunner):
             or task.prompt_snapshot.system_instructions.startswith("DIRECT_QA:")
         )
 
+        mode = task.params.extra.get("mode")
+        raw_tools = task.params.extra.get("tools")
+        if isinstance(raw_tools, list):
+            requested_tools = [str(t).strip() for t in raw_tools if str(t).strip()]
+            tools_str = ", ".join(requested_tools)
+        elif isinstance(raw_tools, str) and raw_tools.strip():
+            requested_tools = [t.strip() for t in raw_tools.split(",") if t.strip()]
+            tools_str = raw_tools.strip()
+        else:
+            requested_tools = []
+            tools_str = ""
+        target_tools = set(requested_tools)
+        if not target_tools and tools_str.strip():
+            target_tools = {t.strip() for t in tools_str.split(",") if t.strip()}
+
+        # Prompt decoration & constraints
+        final_prompt = user_prompt
+        if is_direct_qa:
+            constraint = (
+                "[CONSTRAINT: Direct answer only. "
+                "Do NOT use any tools, file operations, or commands.]"
+            )
+            if constraint not in final_prompt:
+                final_prompt = f"{constraint}\n\n{final_prompt}"
+        elif target_tools:
+            whitelist_str = tools_str.strip() or ", ".join(sorted(target_tools))
+            boundary = (
+                f"[ALLOWED TOOLS STRICT WHITELIST: {whitelist_str}. "
+                "Calling any unlisted tool is strictly forbidden.]"
+            )
+            if boundary not in final_prompt:
+                final_prompt = f"{boundary}\n\n{final_prompt}"
+
         # Build CLI command
-        cmd = [executable, "-p", user_prompt, "--output-format", "stream-json"]
+        cmd = [executable, "-p", final_prompt, "--output-format", "stream-json"]
         if self._skip_permissions or task.params.extra.get("skip_permissions"):
             cmd.append("--dangerously-skip-permissions")
+
+        raw_extra = (
+            task.params.extra.get("extra_args") or task.params.extra.get("passthrough_args") or []
+        )
+        extra_args: list[str] = (
+            [str(a) for a in raw_extra] if isinstance(raw_extra, list) else [str(raw_extra)]
+        )
+
+        effort_flags: list[str] = []
+        if "--effort" not in extra_args:
+            effort_flags = ["--effort", "low"]
+
+        has_write_tools = bool(target_tools & WRITE_TOOLS)
+
+        if is_direct_qa or (mode == "plan"):
+            cmd.extend(["--mode", "plan", "--disable-slash-commands", *effort_flags])
+        elif target_tools:
+            if not has_write_tools:
+                cmd.extend(["--mode", "plan", "--disable-slash-commands"])
+            else:
+                cmd.append("--disable-slash-commands")
+        elif mode:
+            cmd.extend(["--mode", str(mode)])
+
+        if extra_args:
+            i = 0
+            while i < len(extra_args):
+                arg = extra_args[i]
+                if (
+                    arg in ("--disable-slash-commands", "--dangerously-skip-permissions")
+                    and arg in cmd
+                ):
+                    i += 1
+                    continue
+                if arg in ("--mode", "--effort") and arg in cmd:
+                    i += 2
+                    continue
+                cmd.append(arg)
+                i += 1
 
         # Yield initial status event
         mode_label = "direct_qa (0-tool)" if is_direct_qa else "dynamic_tools"

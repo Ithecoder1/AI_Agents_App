@@ -10,3 +10,5 @@ ignore = ["RUF012"]
 [lint.per-file-ignores]
 # Runnable script: extends sys.path before importing the app, and prints a banner.
 "scripts/*.py" = ["E402", "E501"]
+"project/scripts/*.py" = ["E402", "E501"]
+"antigravity.py" = ["E402", "ASYNC230", "ASYNC240"]

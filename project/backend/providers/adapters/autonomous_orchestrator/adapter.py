@@ -21,9 +21,9 @@ from app.domain.models import (
     Usage,
 )
 from app.domain.ports.agent_provider import ProviderDeps
+
 from company_core.orchestrator import AutonomousStartupOrchestrator
 from company_core.state import PHASE_COMPLETED, CompanyState
-
 from providers.kit import BaseAgentRunner
 
 

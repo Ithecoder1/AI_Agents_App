@@ -125,11 +125,20 @@ class MessageStreamAggregator:
             self.usage = self.usage + Usage.from_dict(data)
             return False
 
+        if kind is EventType.STATUS:
+            cmd = data.get("executed_command") or data.get("command")
+            if cmd:
+                self._extensions["executed_command"] = str(cmd)
+                fcp = self._extensions.get("full_context_payload")
+                if isinstance(fcp, dict):
+                    fcp["executed_command"] = str(cmd)
+            return False
+
         if kind is EventType.DONE:
             self.finish_reason = str(data.get("finish_reason") or "") or None
             return True
 
-        return kind is EventType.ERROR  # STATUS and anything unknown: nothing to persist
+        return kind is EventType.ERROR  # other unknown: nothing to persist
 
     def _apply_thought(self, data: Mapping[str, Any]) -> bool:
         text = str(data.get("text", ""))

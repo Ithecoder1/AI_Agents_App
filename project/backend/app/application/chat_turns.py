@@ -231,6 +231,7 @@ class ChatTurnService:
             "used_files": [],
             "total_duration": None,
             "usage_metrics": {},
+            "executed_command": None,
         }
         full_context_payload_text = (
             "=" * 40 + " [FULL CONTEXT PAYLOAD] " + "=" * 40 + "\n"
@@ -386,6 +387,9 @@ class ChatTurnService:
             usage = MessageUsage.from_usage(aggregator.usage, latency_ms=int(duration_s * 1000))
             base_meta = aggregator.metadata(status)
             used_files = base_meta.used_files
+            executed_command = base_meta.executed_command or base_meta.extensions.get(
+                "executed_command"
+            )
             usage_metrics = {
                 "input_tokens": usage.input_tokens,
                 "output_tokens": usage.output_tokens,
@@ -397,10 +401,14 @@ class ChatTurnService:
             fcp["used_files"] = used_files
             fcp["total_duration"] = duration_s
             fcp["usage_metrics"] = usage_metrics
+            if executed_command:
+                fcp["executed_command"] = executed_command
+            cmd_line = f"Executed Command: {executed_command}\n" if executed_command else ""
             fcp_text = (
                 "=" * 40 + " [FULL CONTEXT PAYLOAD] " + "=" * 40 + "\n"
                 f"Workspace: {fcp.get('workspace', {}).get('name', '')}\n"
                 f"Provider: {fcp.get('provider', {}).get('id', '')}\n"
+                f"{cmd_line}"
                 f"System Instructions: {base_meta.system_instructions or ''}\n"
                 f"Active Tools: {base_meta.active_tools}\n"
                 f"Active Tools Count: {base_meta.active_tools_count}\n"
@@ -416,6 +424,8 @@ class ChatTurnService:
                 "used_files": used_files,
                 "usage_metrics": usage_metrics,
             }
+            if executed_command:
+                extra_finish["executed_command"] = executed_command
             if error:
                 extra_finish["error"] = error
             metadata = aggregator.metadata(status, **extra_finish)
@@ -428,6 +438,8 @@ class ChatTurnService:
                 "used_files": used_files,
                 "usage_metrics": usage_metrics,
             }
+            if executed_command:
+                terminal["executed_command"] = executed_command
             try:
                 await self._repo.finalize_message(
                     active.message_id,

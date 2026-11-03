@@ -204,6 +204,7 @@ def print_full_context_payload(
     usage: dict[str, Any] | None = None,
     usage_metrics: dict[str, Any] | None = None,
     injected_schemas: Any = None,
+    executed_command: str | None = None,
     verbose: bool = False,
 ) -> None:
     """Print the exact post-execution full context payload message."""
@@ -220,6 +221,8 @@ def print_full_context_payload(
     norm_usage = normalize_usage_metrics(raw_usage)
 
     print("=" * 40 + " [FULL CONTEXT PAYLOAD] " + "=" * 40)
+    if executed_command:
+        print(f"Executed Command: {executed_command}")
     print(f"System Instructions: {system_instructions}")
     print(f"Active Tools: {list(tools)}")
     print(f"Active Tools Count: {tools_count}")

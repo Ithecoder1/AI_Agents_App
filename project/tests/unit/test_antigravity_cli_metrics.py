@@ -161,9 +161,11 @@ def test_print_full_context_payload(capsys: pytest.CaptureFixture[str]) -> None:
             "cache_read_tokens": 18794,
             "total_tokens": 16749,
         },
+        executed_command="agy -p 'test' --output-format stream-json",
     )
     captured = capsys.readouterr().out
     assert "=" * 40 + " [FULL CONTEXT PAYLOAD] " + "=" * 40 in captured
+    assert "Executed Command: agy -p 'test' --output-format stream-json" in captured
     assert "System Instructions: Direct answer only" in captured
     assert "Active Tools: ['view_file', 'list_dir']" in captured
     assert "Active Tools Count: 2" in captured

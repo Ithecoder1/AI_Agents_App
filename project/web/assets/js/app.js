@@ -493,6 +493,7 @@
     const usedFiles = meta.used_files || meta.extensions?.used_files || [];
     const totalDuration = meta.total_duration ?? meta.extensions?.total_duration ?? meta.extensions?.duration_seconds;
     const usage = meta.usage_metrics || meta.extensions?.usage_metrics || meta.extensions?.usage || null;
+    const executedCommand = meta.executed_command || meta.extensions?.executed_command || meta.full_context_payload?.executed_command || extraData.executedCommand || null;
     const fcp = meta.full_context_payload || meta.extensions?.full_context_payload || {
       workspace: meta.workspace || meta.extensions?.workspace || {
         id: activeWorkspaceId,
@@ -509,7 +510,11 @@
       used_files: usedFiles,
       total_duration: totalDuration,
       usage_metrics: usage,
+      executed_command: executedCommand,
     };
+    if (executedCommand && !fcp.executed_command) {
+      fcp.executed_command = executedCommand;
+    }
 
     const rawPayload = {
       full_context_payload: fcp,
@@ -562,6 +567,20 @@
             ` : (activeToolsCount === 0 ? '<span class="tool-tag-chip tool-less">Direct QA (0-tools)</span>' : '')}
           </div>
     `;
+
+    if (executedCommand) {
+      html += `
+        <div class="inspector-tray" id="tray-cmd-${msgId}">
+          <button type="button" class="inspector-tray-toggle">
+            <span>💻 Executed CLI Command</span>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"></polyline></svg>
+          </button>
+          <div class="inspector-tray-body">
+            <pre class="metrics-pre-block command-pre" style="color:var(--accent-cyan); font-family:var(--font-mono); font-size:11px; white-space:pre-wrap; word-break:break-all;">${escapeHtml(executedCommand)}</pre>
+          </div>
+        </div>
+      `;
+    }
 
     if (usage && (usage.total_tokens || usage.input_tokens)) {
       html += `
@@ -1086,7 +1105,47 @@
       }
     }
 
-    if (type === 'token') {
+    if (type === 'status') {
+      const executedCmd = data.executed_command || data.command;
+      if (executedCmd && msgElement) {
+        if (rawPre) {
+          try {
+            const cur = JSON.parse(rawPre.textContent || '{}');
+            if (cur.full_context_payload) {
+              cur.full_context_payload.executed_command = executedCmd;
+              rawPre.textContent = JSON.stringify(cur, null, 2);
+            }
+          } catch (e) {}
+        }
+        let tray = document.getElementById(`tray-cmd-${messageId}`);
+        if (!tray) {
+          const fmtView = document.getElementById(`formatted-view-${messageId}`);
+          if (fmtView) {
+            tray = document.createElement('div');
+            tray.className = 'inspector-tray';
+            tray.id = `tray-cmd-${messageId}`;
+            tray.innerHTML = `
+              <button type="button" class="inspector-tray-toggle">
+                <span>💻 Executed CLI Command</span>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"></polyline></svg>
+              </button>
+              <div class="inspector-tray-body">
+                <pre class="metrics-pre-block command-pre" style="color:var(--accent-cyan); font-family:var(--font-mono); font-size:11px; white-space:pre-wrap; word-break:break-all;">${escapeHtml(executedCmd)}</pre>
+              </div>
+            `;
+            const header = fmtView.querySelector('.turn-metrics-header');
+            if (header && header.nextSibling) {
+              fmtView.insertBefore(tray, header.nextSibling);
+            } else {
+              fmtView.appendChild(tray);
+            }
+            tray.querySelector('.inspector-tray-toggle').addEventListener('click', () => {
+              tray.classList.toggle('open');
+            });
+          }
+        }
+      }
+    } else if (type === 'token') {
       const token = data.text || '';
       if (contentElement) {
         contentElement.innerHTML += escapeHtml(token);

@@ -146,10 +146,22 @@ def test_message_stream_aggregator_events_and_boundaries() -> None:
     )
     assert aggregator.apply(u1) is False
 
+    status_ev = StreamEvent.create(
+        "task-1",
+        1,
+        EventType.STATUS,
+        state="started",
+        executed_command="agy -p 'hi' --output-format stream-json",
+    )
+    assert aggregator.apply(status_ev) is False
+
     d1 = StreamEvent.create("task-1", 1, EventType.DONE, finish_reason="stop")
     assert aggregator.apply(d1) is True
 
     meta = aggregator.metadata(status=STATUS_COMPLETE)
+    assert meta.executed_command == "agy -p 'hi' --output-format stream-json"
+    fcp_cmd = meta.full_context_payload["executed_command"]
+    assert fcp_cmd == "agy -p 'hi' --output-format stream-json"
     assert len(meta.thoughts) == 1
     assert meta.thoughts[0].text == "Thinking 1 continued"
     assert meta.plan is not None

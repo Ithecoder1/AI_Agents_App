@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import subprocess
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -262,6 +263,7 @@ async def run_agy_stream(
                 total_duration=final_dur,
                 usage=last_usage or {},
                 injected_schemas=turn_metrics.injected_schemas,
+                executed_command=subprocess.list2cmdline(cmd),
                 verbose=verbose,
             )
 

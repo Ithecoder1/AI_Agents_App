@@ -181,6 +181,7 @@ class AntigravityProvider(BaseAgentRunner):
         )
 
         mode_label = "direct_qa (0-tool)" if is_direct_qa else "dynamic_tools"
+        cmd_str = subprocess.list2cmdline(cmd)
         yield self.event(
             task,
             EventType.STATUS,
@@ -188,6 +189,8 @@ class AntigravityProvider(BaseAgentRunner):
             provider=self.config.id,
             mode=mode_label,
             workspace=str(target_cwd),
+            command=cmd_str,
+            executed_command=cmd_str,
         )
 
         try:
@@ -364,6 +367,7 @@ class AntigravityProvider(BaseAgentRunner):
         plan: ResolvedExecutionPlan,
     ) -> AsyncIterator[StreamEvent]:
         """Stream execution via local Antigravity SDK mode."""
+        sdk_cmd = f"antigravity-sdk execute --workspace {target_cwd}"
         yield self.event(
             task,
             EventType.STATUS,
@@ -371,6 +375,8 @@ class AntigravityProvider(BaseAgentRunner):
             provider=self.config.id,
             mode="sdk",
             workspace=str(target_cwd),
+            command=sdk_cmd,
+            executed_command=sdk_cmd,
         )
         prompt_text = task.prompt_snapshot.user_prompt
         yield self.event(

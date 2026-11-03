@@ -346,11 +346,24 @@ class MessageMetadata:
         return {}
 
     @property
+    def executed_command(self) -> str | None:
+        val = self.extensions.get("executed_command") or self.extensions.get("command")
+        if val is not None:
+            return str(val)
+        fcp = self.extensions.get("full_context_payload")
+        if isinstance(fcp, Mapping) and fcp.get("executed_command"):
+            return str(fcp["executed_command"])
+        return None
+
+    @property
     def full_context_payload(self) -> dict[str, Any]:
         val = self.extensions.get("full_context_payload")
         if isinstance(val, Mapping):
-            return dict(val)
-        return {
+            res = dict(val)
+            if self.executed_command and not res.get("executed_command"):
+                res["executed_command"] = self.executed_command
+            return res
+        res = {
             "workspace": dict(self.extensions.get("workspace") or {}),
             "provider": {
                 "provider_id": self.extensions.get("provider_id"),
@@ -365,6 +378,9 @@ class MessageMetadata:
             "total_duration": self.total_duration,
             "usage_metrics": self.usage_metrics,
         }
+        if self.executed_command:
+            res["executed_command"] = self.executed_command
+        return res
 
     @property
     def full_context_payload_text(self) -> str:
@@ -392,6 +408,7 @@ class MessageMetadata:
             "usage_metrics": self.usage_metrics,
             "full_context_payload": self.full_context_payload,
             "full_context_payload_text": self.full_context_payload_text,
+            "executed_command": self.executed_command,
             "extensions": dict(self.extensions),
         }
 
@@ -412,6 +429,7 @@ class MessageMetadata:
             "usage_metrics",
             "full_context_payload",
             "full_context_payload_text",
+            "executed_command",
         ):
             if key in data and key not in extensions:
                 extensions[key] = data[key]

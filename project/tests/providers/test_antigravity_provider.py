@@ -411,8 +411,11 @@ async def test_antigravity_direct_qa_mode_cli_flags() -> None:
     mock_process.wait = AsyncMock(return_value=0)
 
     with patch("asyncio.create_subprocess_exec", return_value=mock_process) as mock_exec:
-        _ = [e async for e in provider.stream_execute(task)]
+        events = [e async for e in provider.stream_execute(task)]
         assert mock_exec.called
+        assert events[0].type == EventType.STATUS
+        assert "executed_command" in events[0].data
+        assert "--output-format stream-json" in events[0].data["executed_command"]
         call_args = list(mock_exec.call_args[0])
         # Verify: --mode plan --disable-slash-commands --effort low
         assert "--mode" in call_args

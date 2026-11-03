@@ -143,6 +143,68 @@ async def test_send_message_and_execution_lifecycle() -> None:
             await ac.delete(f"/api/chats/{session_id}")
 
 
+@pytest.mark.asyncio
+async def test_send_message_turn_metrics() -> None:
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as ac:
+        create_res = await ac.post(
+            "/api/workspaces/root/chats",
+            json={"title": "Turn Metrics Test", "provider_id": "fake", "model": "fake-model"},
+        )
+        assert create_res.status_code == 201
+        session_id = create_res.json()["id"]
+
+        try:
+            msg_res = await ac.post(
+                f"/api/chats/{session_id}/messages",
+                json={
+                    "user_prompt": "Run with specific tools",
+                    "tools": ["view_file", "list_dir"],
+                    "tool_mode": "manual",
+                },
+            )
+            assert msg_res.status_code == 202
+            payload = msg_res.json()
+
+            # Verify request metadata has turn telemetry and FULL CONTEXT PAYLOAD
+            user_meta = payload["user_message"]["metadata"]
+            assert "system_instructions" in user_meta
+            assert isinstance(user_meta["system_instructions"], str)
+            assert user_meta["active_tools"] == ["view_file", "list_dir"]
+            assert user_meta["active_tools_count"] == 2
+            assert isinstance(user_meta["injected_schemas"], list)
+            assert "full_context_payload" in user_meta
+            assert user_meta["full_context_payload"]["workspace"]["id"] == "root"
+            assert "FULL CONTEXT PAYLOAD" in user_meta["full_context_payload_text"]
+
+            # Wait for execution turn to finish
+            for _ in range(20):
+                await asyncio.sleep(0.1)
+                session_res = await ac.get(f"/api/chats/{session_id}")
+                if session_res.status_code == 200:
+                    full_session = session_res.json()
+                    if (
+                        len(full_session["messages"]) >= 2
+                        and full_session["messages"][1]["status"] == "complete"
+                    ):
+                        break
+
+            assert session_res.status_code == 200
+            full_session = session_res.json()
+            _, assistant_msg = full_session["messages"]
+            asst_meta = assistant_msg["metadata"]
+
+            assert asst_meta["active_tools"] == ["view_file", "list_dir"]
+            assert asst_meta["active_tools_count"] == 2
+            assert "system_instructions" in asst_meta
+            assert isinstance(asst_meta["injected_schemas"], list)
+            assert "full_context_payload" in asst_meta
+            assert "FULL CONTEXT PAYLOAD" in asst_meta["full_context_payload_text"]
+        finally:
+            await ac.delete(f"/api/chats/{session_id}")
+
+
 def test_cancel_chat_turn(client: TestClient) -> None:
     create_res = client.post(
         "/api/workspaces/root/chats",
@@ -168,6 +230,9 @@ def test_websocket_chat_events_replay_finished(client: TestClient) -> None:
     try:
         # Connecting to a session with no active stream closes cleanly
         with client.websocket_connect(f"/api/chats/{session_id}/events"):
+            pass
+        # Also verify workspace-scoped WebSocket endpoint
+        with client.websocket_connect(f"/api/workspaces/root/chats/{session_id}/ws"):
             pass
     finally:
         client.delete(f"/api/chats/{session_id}")

@@ -12,6 +12,7 @@ from app.application.chat_sessions import ChatSessionService
 from app.application.chat_turns import ChatTurnService
 from app.application.registry import ProviderRegistry, ProviderState
 from app.application.settings import AppSettings
+from app.application.tools import DynamicToolRegistry
 from app.application.workspace_manager import WorkspaceManager
 from app.domain.ports.agent_provider import ProviderDeps
 from app.infrastructure.config import (
@@ -76,11 +77,26 @@ def default_workspace_manager() -> WorkspaceManager:
     return build_workspace_manager(repo_root())
 
 
+def load_tool_registry(config_dir: Path) -> DynamicToolRegistry:
+    catalog_path = config_dir / "antigravity_tools_catalog.json"
+    if catalog_path.is_file():
+        import json
+
+        try:
+            with open(catalog_path, encoding="utf-8") as f:
+                data = json.load(f)
+            return DynamicToolRegistry.from_catalog_dict(data)
+        except Exception as exc:
+            _log.warning("Failed to load tool catalog from %s: %s", catalog_path, exc)
+    return DynamicToolRegistry()
+
+
 def build_chat_services(
     settings: AppSettings,
     registry: ProviderRegistry,
     workspace_manager: WorkspaceManager,
     root: Path | None = None,
+    tool_registry: DynamicToolRegistry | None = None,
 ) -> tuple[AsyncEngine, SqlAlchemyChatRepository, ChatSessionService, ChatTurnService]:
     base = root or repo_root()
     url = resolve_database_url(settings.storage.db_url, base)
@@ -89,8 +105,13 @@ def build_chat_services(
     session_factory = create_session_factory(engine)
     chat_repo = SqlAlchemyChatRepository(session_factory)
     chat_session_service = ChatSessionService(chat_repo)
+    tools = tool_registry if tool_registry is not None else load_tool_registry(base / "config")
     chat_turn_service = ChatTurnService(
-        chat_session_service, chat_repo, registry, workspace_manager
+        chat_session_service,
+        chat_repo,
+        registry,
+        workspace_manager,
+        tool_registry=tools,
     )
     return engine, chat_repo, chat_session_service, chat_turn_service
 

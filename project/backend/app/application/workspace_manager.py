@@ -7,6 +7,11 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
+from app.application.triage import (
+    LIGHTWEIGHT_SYSTEM_INSTRUCTIONS,
+    is_lightweight_query,
+    should_load_workspace_context,
+)
 from app.domain.chat import ContextSnapshot
 from app.domain.errors import ValidationError
 from app.domain.models import ProjectManifest, WorkspaceContext
@@ -205,8 +210,21 @@ class WorkspaceManager:
         return _walk(workspace.root_path, 0)
 
     # -- Lazy Context Loading & Prompt Enrichment ---------------------------- #
-    def load_context_summaries(self, workspace: WorkspaceContext) -> dict[str, str]:
-        """Read only files listed in manifest.context_files, enforcing sandbox boundaries."""
+    def load_context_summaries(
+        self,
+        workspace: WorkspaceContext,
+        query: str | None = None,
+    ) -> dict[str, str]:
+        """Read only files listed in manifest.context_files, enforcing sandbox boundaries.
+
+        If `query` is provided, files are only loaded if the prompt explicitly references
+        architecture, code changes, or project structure.
+        """
+        if query is not None and not should_load_workspace_context(
+            query, workspace.manifest.context_files
+        ):
+            return {}
+
         summaries: dict[str, str] = {}
         for rel_file in workspace.manifest.context_files:
             try:
@@ -220,13 +238,20 @@ class WorkspaceManager:
                 continue
         return summaries
 
-    def collect_context_items(self, workspace: WorkspaceContext) -> tuple[ContextSnapshot, ...]:
+    def collect_context_items(
+        self,
+        workspace: WorkspaceContext,
+        query: str | None = None,
+    ) -> tuple[ContextSnapshot, ...]:
         """Structured record of the context :meth:`enrich_system_instructions` attaches to a turn.
 
         Stored on the assistant message so the UI can show what the model was given.
         """
+        if query is not None and is_lightweight_query(query):
+            return ()
+
         items: list[ContextSnapshot] = []
-        for rel_file, text in self.load_context_summaries(workspace).items():
+        for rel_file, text in self.load_context_summaries(workspace, query=query).items():
             items.append(
                 ContextSnapshot(
                     kind="file",
@@ -237,25 +262,31 @@ class WorkspaceManager:
                     truncated=text.endswith("... [truncated]") or len(text) > 600,
                 )
             )
-        tree_lines: list[str] = []
-        self._format_tree_text(self.scan_tree(workspace, max_depth=2), tree_lines)
-        items.append(
-            ContextSnapshot(
-                kind="directory_tree",
-                label=f"{workspace.name} (depth 2)",
-                path=".",
-                content="\n".join(tree_lines),
-                size_bytes=len("\n".join(tree_lines).encode("utf-8")),
+
+        if query is None or should_load_workspace_context(query, workspace.manifest.context_files):
+            tree_lines: list[str] = []
+            self._format_tree_text(self.scan_tree(workspace, max_depth=2), tree_lines)
+            items.append(
+                ContextSnapshot(
+                    kind="directory_tree",
+                    label=f"{workspace.name} (depth 2)",
+                    path=".",
+                    content="\n".join(tree_lines),
+                    size_bytes=len("\n".join(tree_lines).encode("utf-8")),
+                )
             )
-        )
         return tuple(items)
 
     def enrich_system_instructions(
         self,
         workspace: WorkspaceContext,
         base_instructions: str = "",
+        query: str | None = None,
     ) -> str:
         """Inject workspace context, manifest contract, and context files into system prompt."""
+        if query is not None and is_lightweight_query(query):
+            return LIGHTWEIGHT_SYSTEM_INSTRUCTIONS
+
         manifest = workspace.manifest
         lines: list[str] = []
         if base_instructions:
@@ -273,8 +304,8 @@ class WorkspaceManager:
         if workspace.is_self:
             lines.append("- **Self-Improvement Mode:** TARGET IS THE META-AGENT APP ITSELF.")
 
-        # Context files
-        context_files = self.load_context_summaries(workspace)
+        # Context files (only loaded if query references workspace context or query is None)
+        context_files = self.load_context_summaries(workspace, query=query)
         if context_files:
             lines.append("")
             lines.append("### Project Context Documentation")
@@ -284,13 +315,14 @@ class WorkspaceManager:
                 lines.append(text.strip())
                 lines.append("```")
 
-        # Tree summary
-        tree = self.scan_tree(workspace, max_depth=2)
-        lines.append("")
-        lines.append("### Directory Structure (Top Level)")
-        lines.append("```")
-        self._format_tree_text(tree, lines, prefix="")
-        lines.append("```")
+        # Tree summary (only if context files are loaded or query is None)
+        if query is None or should_load_workspace_context(query, workspace.manifest.context_files):
+            tree = self.scan_tree(workspace, max_depth=2)
+            lines.append("")
+            lines.append("### Directory Structure (Top Level)")
+            lines.append("```")
+            self._format_tree_text(tree, lines, prefix="")
+            lines.append("```")
 
         return "\n".join(lines)
 

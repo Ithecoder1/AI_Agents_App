@@ -21,7 +21,7 @@ class AntigravityStreamParser:
 
     async def parse_stream(
         self,
-        stdout: asyncio.StreamReader,
+        stdout: asyncio.StreamReader | AsyncIterator[bytes],
         task: ExecutionTask,
     ) -> AsyncIterator[StreamEvent]:
         """Yield parsed domain StreamEvents from the subprocess stdout reader."""
@@ -33,7 +33,14 @@ class AntigravityStreamParser:
             try:
                 payload = json.loads(line)
             except json.JSONDecodeError:
-                yield self._event(task, EventType.LOG, line=line)
+                yield self._event(
+                    task,
+                    EventType.LOG,
+                    line=line,
+                    text=line,
+                    stream="stdout",
+                    raw_payload={"raw": line},
+                )
                 continue
 
             event_name = payload.get("event")
@@ -47,6 +54,7 @@ class AntigravityStreamParser:
                     state="running",
                     conversation_id=conv_id,
                     tools_count=len(init_meta.get("tools", [])),
+                    raw_payload=payload,
                 )
 
             elif event_name == "step_update":
@@ -59,7 +67,12 @@ class AntigravityStreamParser:
                     step.get("thought_delta") or step.get("thinking_delta") or step.get("thought")
                 )
                 if thought:
-                    yield self._event(task, EventType.THOUGHT, text=thought)
+                    yield self._event(
+                        task,
+                        EventType.THOUGHT,
+                        text=thought,
+                        raw_payload=payload,
+                    )
 
                 # Tool call / result
                 if step_type == "tool":
@@ -71,6 +84,7 @@ class AntigravityStreamParser:
                             EventType.TOOL_CALL,
                             name=tool_name,
                             args=tool_info.get("parameters", {}),
+                            raw_payload=payload,
                         )
                     elif state == "DONE":
                         yield self._event(
@@ -78,12 +92,18 @@ class AntigravityStreamParser:
                             EventType.TOOL_RESULT,
                             name=tool_name,
                             result=tool_info.get("output", ""),
+                            raw_payload=payload,
                         )
 
                 # Agent text delta
                 text_delta = step.get("text_delta")
                 if text_delta:
-                    yield self._event(task, EventType.TOKEN, text=text_delta)
+                    yield self._event(
+                        task,
+                        EventType.TOKEN,
+                        text=text_delta,
+                        raw_payload=payload,
+                    )
 
             elif event_name == "result":
                 res = payload.get("result", {})
@@ -93,4 +113,9 @@ class AntigravityStreamParser:
                     completion_tokens=usage_data.get("output_tokens", 0),
                     cost_usd=0.0,
                 )
-                yield self._event(task, EventType.USAGE, **usage.to_dict())
+                yield self._event(
+                    task,
+                    EventType.USAGE,
+                    **usage.to_dict(),
+                    raw_payload=payload,
+                )

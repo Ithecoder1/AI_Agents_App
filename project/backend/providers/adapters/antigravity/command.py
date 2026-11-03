@@ -53,7 +53,21 @@ class AntigravityCommandBuilder:
         mode: Any,
     ) -> list[str]:
         """Construct the complete CLI argument list for the `agy` process."""
-        cmd = [executable, "-p", final_prompt, "--output-format", "stream-json"]
+        import sys
+
+        if sys.platform == "win32" and executable.lower().endswith((".cmd", ".bat")):
+            cmd = [
+                "cmd.exe",
+                "/c",
+                executable,
+                "-p",
+                final_prompt,
+                "--output-format",
+                "stream-json",
+            ]
+        else:
+            cmd = [executable, "-p", final_prompt, "--output-format", "stream-json"]
+
         if skip_permissions:
             cmd.append("--dangerously-skip-permissions")
 

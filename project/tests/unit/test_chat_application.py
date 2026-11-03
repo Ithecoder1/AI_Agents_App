@@ -254,9 +254,9 @@ async def test_chat_turn_service_end_to_end(
 
     started = await turn_svc.start_turn(
         session.id,
-        "Hello assistant, say hi!",
+        "Explain the project architecture and describe system structure",
     )
-    assert started.user_message.content == "Hello assistant, say hi!"
+    assert started.user_message.content.startswith("Explain the project")
     assert started.assistant_message.metadata.status == STATUS_STREAMING
 
     # Conflict check
@@ -275,7 +275,7 @@ async def test_chat_turn_service_end_to_end(
     await asyncio.sleep(0.1)
 
     updated_session = await session_svc.get_session(session.id)
-    assert updated_session.title.startswith("Hello assistant")
+    assert updated_session.title.startswith("Explain the project")
     assert updated_session.telemetry.message_count == 2
     assert updated_session.telemetry.total_tokens > 0
 
@@ -283,3 +283,75 @@ async def test_chat_turn_service_end_to_end(
     assert assistant_msg.metadata.status == STATUS_COMPLETE
     assert "fake:" in assistant_msg.content
     assert len(assistant_msg.metadata.context_items) > 0  # Context files snapshot captured!
+
+
+@pytest.mark.asyncio
+async def test_chat_turn_lightweight_greeting_triage(
+    repo: SqlAlchemyChatRepository,
+) -> None:
+    from app.api.composition import default_registry, default_workspace_manager
+    from app.application.tools import DynamicToolRegistry
+    from app.domain.tools import ToolDescriptor
+
+    registry, _ = default_registry()
+    workspaces = default_workspace_manager()
+    session_svc = ChatSessionService(repo)
+    tool_reg = DynamicToolRegistry()
+    tool_reg.register(
+        ToolDescriptor(name="search_available_tools", category="system", summary="Search tools")
+    )
+    turn_svc = ChatTurnService(
+        session_svc, repo, registry, workspaces, tool_registry=tool_reg, flush_interval_s=0.1
+    )
+
+    session = await session_svc.create_session(
+        project_id="root",
+        provider_id="fake",
+        model_name="fake-model",
+    )
+
+    # 1. Send "hi"
+    started = await turn_svc.start_turn(session.id, "hi")
+    assert started.user_message.content == "hi"
+    assert started.assistant_message.metadata.status == STATUS_STREAMING
+    assert started.assistant_message.metadata.context_items == ()
+    user_meta = started.user_message.metadata.extensions
+    assert user_meta["active_tools"] == []
+    assert user_meta["active_tools_count"] == 0
+    fcp = user_meta["full_context_payload"]
+    assert fcp["active_tools"] == []
+    assert fcp["active_tools_count"] == 0
+    assert fcp["context_items"] == []
+    assert "Respond concisely and directly (1-2 sentences)" in fcp["system_instructions"]
+
+    # Consume stream
+    async for _ in started.stream.subscribe():
+        pass
+    await asyncio.sleep(0.1)
+
+    updated_session = await session_svc.get_session(session.id)
+    asst_msg = updated_session.messages[1]
+    assert asst_msg.metadata.status == STATUS_COMPLETE
+    assert asst_msg.metadata.context_items == ()
+    assert asst_msg.metadata.active_tools == []
+    assert asst_msg.metadata.active_tools_count == 0
+    asst_fcp = asst_msg.metadata.extensions["full_context_payload"]
+    assert asst_fcp["context_items"] == []
+    assert asst_fcp["active_tools"] == []
+    assert asst_fcp["active_tools_count"] == 0
+
+    # 2. Send "1+1?" in another session
+    session2 = await session_svc.create_session(
+        project_id="root",
+        provider_id="fake",
+        model_name="fake-model",
+    )
+    started2 = await turn_svc.start_turn(session2.id, "1+1?")
+    user_meta2 = started2.user_message.metadata.extensions
+    assert user_meta2["active_tools"] == []
+    assert user_meta2["active_tools_count"] == 0
+    fcp2 = user_meta2["full_context_payload"]
+    assert fcp2["active_tools"] == []
+    assert fcp2["active_tools_count"] == 0
+    assert fcp2["context_items"] == []
+    assert "Respond concisely and directly (1-2 sentences)" in fcp2["system_instructions"]

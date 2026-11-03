@@ -484,6 +484,169 @@
     scrollToBottom();
   }
 
+  function buildTurnMetricsHtml(meta, msgId, extraData = {}) {
+    if (!meta) return '';
+    const sysInstructions = meta.system_instructions || meta.extensions?.system_instructions || '';
+    const activeTools = meta.active_tools || meta.extensions?.active_tools || [];
+    const activeToolsCount = meta.active_tools_count ?? meta.extensions?.active_tools_count ?? activeTools.length;
+    const injectedSchemas = meta.injected_schemas || meta.extensions?.injected_schemas || [];
+    const usedFiles = meta.used_files || meta.extensions?.used_files || [];
+    const totalDuration = meta.total_duration ?? meta.extensions?.total_duration ?? meta.extensions?.duration_seconds;
+    const usage = meta.usage_metrics || meta.extensions?.usage_metrics || meta.extensions?.usage || null;
+    const fcp = meta.full_context_payload || meta.extensions?.full_context_payload || {
+      workspace: meta.workspace || meta.extensions?.workspace || {
+        id: activeWorkspaceId,
+        name: activeWorkspaceId,
+      },
+      provider: meta.provider || {
+        id: meta.extensions?.provider_id || (activeSessionData?.provider_id || 'antigravity-headless'),
+        model: meta.extensions?.model || 'default',
+      },
+      system_instructions: sysInstructions,
+      active_tools: activeTools,
+      active_tools_count: activeToolsCount,
+      injected_schemas: injectedSchemas,
+      used_files: usedFiles,
+      total_duration: totalDuration,
+      usage_metrics: usage,
+    };
+
+    const rawPayload = {
+      full_context_payload: fcp,
+      ...(extraData.thoughts?.length ? { thoughts: extraData.thoughts } : {}),
+      ...(extraData.toolCalls?.length ? { tool_calls: extraData.toolCalls } : {}),
+      ...(extraData.logs?.length ? { logs: extraData.logs } : {}),
+      ...(extraData.usage ? { usage: extraData.usage } : {}),
+    };
+
+    let html = `
+      <div class="turn-metrics-panel" id="metrics-${msgId}">
+        <div class="inspector-header-bar">
+          <div class="inspector-header-left">
+            <span class="inspector-context-badge">FULL CONTEXT PAYLOAD</span>
+          </div>
+          <div class="inspector-header-right">
+            <label class="json-toggle-label" title="Toggle between formatted inspector and raw JSON log stream">
+              <input type="checkbox" class="json-toggle-checkbox" data-msg-id="${msgId}" id="toggle-json-${msgId}">
+              <span class="json-toggle-slider"></span>
+              <span class="json-toggle-text">JSON View</span>
+            </label>
+          </div>
+        </div>
+
+        <div class="inspector-formatted-view" id="formatted-view-${msgId}">
+          <div class="turn-metrics-header">
+            <div class="metrics-pill active-tools-pill" title="Number of active tools in this turn">
+              <span class="metrics-icon">🔧</span>
+              <span class="metrics-pill-label">Active Tools:</span>
+              <strong class="metrics-pill-val">${activeToolsCount}</strong>
+            </div>
+            ${totalDuration ? `
+              <div class="metrics-pill duration-pill" title="Execution duration">
+                <span class="metrics-icon">⏱️</span>
+                <span class="metrics-pill-label">Duration:</span>
+                <strong class="metrics-pill-val">${Number(totalDuration).toFixed(2)}s</strong>
+              </div>
+            ` : ''}
+            ${usage && (usage.total_tokens || usage.input_tokens) ? `
+              <div class="metrics-pill usage-pill" title="Tokens: in=${usage.input_tokens}, out=${usage.output_tokens}, think=${usage.thinking_tokens || 0}, cache=${usage.cache_read_tokens || 0}">
+                <span class="metrics-icon">📊</span>
+                <span class="metrics-pill-label">Tokens:</span>
+                <strong class="metrics-pill-val">${usage.total_tokens || (usage.input_tokens + usage.output_tokens)}</strong>
+              </div>
+            ` : ''}
+            ${activeTools.length > 0 ? `
+              <div class="active-tools-chips">
+                ${activeTools.map(t => `<span class="tool-tag-chip" title="Active tool: ${escapeHtml(t)}">${escapeHtml(t)}</span>`).join('')}
+              </div>
+            ` : (activeToolsCount === 0 ? '<span class="tool-tag-chip tool-less">Direct QA (0-tools)</span>' : '')}
+          </div>
+    `;
+
+    if (usage && (usage.total_tokens || usage.input_tokens)) {
+      html += `
+        <div class="inspector-tray" id="tray-usage-${msgId}">
+          <button type="button" class="inspector-tray-toggle">
+            <span>📊 Usage Metrics: input=${usage.input_tokens || 0}, output=${usage.output_tokens || 0}, thinking=${usage.thinking_tokens || 0}, cache=${usage.cache_read_tokens || 0}</span>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"></polyline></svg>
+          </button>
+          <div class="inspector-tray-body">
+            <pre class="metrics-pre-block usage-json-pre">${escapeHtml(JSON.stringify(usage, null, 2))}</pre>
+          </div>
+        </div>
+      `;
+    }
+
+    if (sysInstructions) {
+      html += `
+        <div class="inspector-tray" id="tray-sys-${msgId}">
+          <button type="button" class="inspector-tray-toggle">
+            <span>📜 System Instructions (${sysInstructions.length} chars)</span>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"></polyline></svg>
+          </button>
+          <div class="inspector-tray-body">
+            <pre class="metrics-pre-block system-instructions-pre">${escapeHtml(sysInstructions)}</pre>
+          </div>
+        </div>
+      `;
+    }
+
+    if (usedFiles.length > 0) {
+      html += `
+        <div class="inspector-tray" id="tray-files-${msgId}">
+          <button type="button" class="inspector-tray-toggle">
+            <span>📁 Files Used (${usedFiles.length})</span>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"></polyline></svg>
+          </button>
+          <div class="inspector-tray-body">
+            <div class="active-tools-chips" style="margin-top: 4px; display: flex; flex-wrap: wrap; gap: 6px;">
+              ${usedFiles.map(f => `<span class="tool-tag-chip" style="color:var(--accent-cyan); border-color:rgba(56,189,248,0.3); font-family:var(--font-mono); font-size:11.5px;" title="File: ${escapeHtml(f)}">📄 ${escapeHtml(f)}</span>`).join('')}
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    if (injectedSchemas.length > 0) {
+      const schemasList = injectedSchemas.map((s, idx) => {
+        const toolName = s.name || s.title || (activeTools[idx] || `Tool #${idx + 1}`);
+        const toolDesc = s.description || s.summary || '';
+        const schemaParams = s.parameters || s.schema || s;
+        return `
+          <div class="schema-item-card">
+            <div class="schema-card-header">
+              <strong style="color:var(--accent-cyan); font-family:var(--font-mono); font-size:11.5px;">📦 ${escapeHtml(toolName)}</strong>
+              ${toolDesc ? `<span class="schema-card-desc">${escapeHtml(toolDesc)}</span>` : ''}
+            </div>
+            <pre class="metrics-pre-block schema-json-pre">${escapeHtml(JSON.stringify(schemaParams, null, 2))}</pre>
+          </div>
+        `;
+      }).join('');
+
+      html += `
+        <div class="inspector-tray" id="tray-schemas-${msgId}">
+          <button type="button" class="inspector-tray-toggle">
+            <span>📦 Injected Schemas (${injectedSchemas.length} schema${injectedSchemas.length === 1 ? '' : 's'})</span>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"></polyline></svg>
+          </button>
+          <div class="inspector-tray-body">
+            <div class="schemas-items-list">${schemasList}</div>
+          </div>
+        </div>
+      `;
+    }
+
+    html += `
+        </div>
+
+        <div class="inspector-raw-json-view" id="raw-json-view-${msgId}" style="display: none;">
+          <pre class="metrics-pre-block raw-json-pre">${escapeHtml(JSON.stringify(rawPayload, null, 2))}</pre>
+        </div>
+      </div>
+    `;
+    return html;
+  }
+
   function createMessageElement(msg) {
     const isUser = msg.role === 'user';
     const turnDiv = document.createElement('div');
@@ -491,15 +654,42 @@
     turnDiv.id = `msg-${msg.id}`;
 
     if (isUser) {
+      const userMeta = msg.metadata || {};
+      const userMetricsHtml = buildTurnMetricsHtml(userMeta, msg.id);
+
       turnDiv.innerHTML = `
         <div class="msg-avatar" title="You">U</div>
         <div class="msg-body-wrapper">
           <div class="msg-bubble">
             <div class="msg-text-content">${escapeHtml(msg.content)}</div>
+            ${userMetricsHtml ? `<div class="msg-inspector user-inspector" style="margin-top:10px; margin-bottom:0;">${userMetricsHtml}</div>` : ''}
           </div>
           <span style="font-size:10.5px; color:#64748b;">${formatRelativeTime(msg.created_at)}</span>
         </div>
       `;
+
+      turnDiv.querySelectorAll('.inspector-tray-toggle').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const tray = btn.closest('.inspector-tray');
+          tray.classList.toggle('open');
+        });
+      });
+
+      turnDiv.querySelectorAll('.json-toggle-checkbox').forEach(chk => {
+        chk.addEventListener('change', () => {
+          const mid = chk.dataset.msgId;
+          const fmtView = document.getElementById(`formatted-view-${mid}`);
+          const rawView = document.getElementById(`raw-json-view-${mid}`);
+          if (chk.checked) {
+            if (fmtView) fmtView.style.display = 'none';
+            if (rawView) rawView.style.display = 'block';
+          } else {
+            if (fmtView) fmtView.style.display = 'block';
+            if (rawView) rawView.style.display = 'none';
+          }
+        });
+      });
+
       return turnDiv;
     }
 
@@ -514,7 +704,7 @@
     const usage = msg.usage || {};
     const runInfo = meta.extensions || {};
 
-    let inspectorHtml = '';
+    let inspectorHtml = buildTurnMetricsHtml(meta, msg.id, { thoughts, toolCalls, logs, usage });
 
     // 1. Context items accordion
     if (contextItems.length > 0) {
@@ -650,6 +840,21 @@
       btn.addEventListener('click', () => {
         const tray = btn.closest('.inspector-tray');
         tray.classList.toggle('open');
+      });
+    });
+
+    turnDiv.querySelectorAll('.json-toggle-checkbox').forEach(chk => {
+      chk.addEventListener('change', () => {
+        const mid = chk.dataset.msgId;
+        const fmtView = document.getElementById(`formatted-view-${mid}`);
+        const rawView = document.getElementById(`raw-json-view-${mid}`);
+        if (chk.checked) {
+          if (fmtView) fmtView.style.display = 'none';
+          if (rawView) rawView.style.display = 'block';
+        } else {
+          if (fmtView) fmtView.style.display = 'block';
+          if (rawView) rawView.style.display = 'none';
+        }
       });
     });
 
@@ -857,12 +1062,29 @@
     };
   }
 
+  const activeStreamEvents = {};
+
   function handleStreamEvent(event, messageId) {
+    activeStreamEvents[messageId] = activeStreamEvents[messageId] || [];
+    activeStreamEvents[messageId].push(event);
+
     const type = event.type;
     const data = event.data || {};
 
     const msgElement = document.getElementById(`msg-${messageId}`);
     const contentElement = document.getElementById(`msg-content-${messageId}`);
+
+    // Update Raw JSON view in real-time
+    const rawPre = document.querySelector(`#raw-json-view-${messageId} .raw-json-pre`);
+    if (rawPre) {
+      try {
+        const cur = JSON.parse(rawPre.textContent || '{}');
+        cur.live_events = activeStreamEvents[messageId];
+        rawPre.textContent = JSON.stringify(cur, null, 2);
+      } catch (e) {
+        // Fallback
+      }
+    }
 
     if (type === 'token') {
       const token = data.text || '';
@@ -871,10 +1093,113 @@
         scrollToBottom();
       }
     } else if (type === 'thought') {
-      // Thought received
-      console.log('Thought step:', data.text);
+      const thoughtText = data.text || '';
+      if (msgElement) {
+        let tray = document.getElementById(`tray-thoughts-${messageId}`);
+        if (!tray) {
+          const fmtView = document.getElementById(`formatted-view-${messageId}`);
+          if (fmtView) {
+            tray = document.createElement('div');
+            tray.className = 'inspector-tray open';
+            tray.id = `tray-thoughts-${messageId}`;
+            tray.innerHTML = `
+              <button type="button" class="inspector-tray-toggle">
+                <span>🧠 Reasoning &amp; Internal Thoughts</span>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"></polyline></svg>
+              </button>
+              <div class="inspector-tray-body"></div>
+            `;
+            fmtView.appendChild(tray);
+            tray.querySelector('.inspector-tray-toggle').addEventListener('click', () => {
+              tray.classList.toggle('open');
+            });
+          }
+        }
+        if (tray) {
+          const body = tray.querySelector('.inspector-tray-body');
+          if (body) {
+            const card = document.createElement('div');
+            card.className = 'thought-step-card';
+            card.innerHTML = `<strong>🧠 Thought:</strong><div>${escapeHtml(thoughtText)}</div>`;
+            body.appendChild(card);
+            scrollToBottom();
+          }
+        }
+      }
+    } else if (type === 'tool_call') {
+      const toolName = data.name || 'tool';
+      const toolArgs = data.args || {};
+      if (msgElement) {
+        let tray = document.getElementById(`tray-tools-${messageId}`);
+        if (!tray) {
+          const fmtView = document.getElementById(`formatted-view-${messageId}`);
+          if (fmtView) {
+            tray = document.createElement('div');
+            tray.className = 'inspector-tray open';
+            tray.id = `tray-tools-${messageId}`;
+            tray.innerHTML = `
+              <button type="button" class="inspector-tray-toggle">
+                <span>🔧 Tool Executions &amp; Runtime Logs</span>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"></polyline></svg>
+              </button>
+              <div class="inspector-tray-body"></div>
+            `;
+            fmtView.appendChild(tray);
+            tray.querySelector('.inspector-tray-toggle').addEventListener('click', () => {
+              tray.classList.toggle('open');
+            });
+          }
+        }
+        if (tray) {
+          const body = tray.querySelector('.inspector-tray-body');
+          if (body) {
+            const card = document.createElement('div');
+            card.style.marginBottom = '6px';
+            card.style.fontFamily = 'var(--font-mono)';
+            card.id = `live-tool-${messageId}-${toolName}`;
+            card.innerHTML = `
+              <strong style="color:var(--accent-cyan);">🔧 ${escapeHtml(toolName)}</strong>
+              <pre style="background:rgba(0,0,0,0.4); padding:6px; border-radius:4px; font-size:10.5px; margin-top:2px;">${escapeHtml(JSON.stringify(toolArgs, null, 2))}</pre>
+            `;
+            body.appendChild(card);
+            scrollToBottom();
+          }
+        }
+      }
+    } else if (type === 'tool_result') {
+      const toolName = data.name || 'tool';
+      const result = data.result;
+      if (msgElement) {
+        const liveCard = document.getElementById(`live-tool-${messageId}-${toolName}`);
+        if (liveCard) {
+          const resDiv = document.createElement('div');
+          resDiv.style.color = '#10b981';
+          resDiv.style.fontSize = '10.5px';
+          resDiv.style.marginTop = '2px';
+          resDiv.textContent = `Result: ${typeof result === 'string' ? result : JSON.stringify(result)}`;
+          liveCard.appendChild(resDiv);
+          scrollToBottom();
+        }
+      }
+    } else if (type === 'log') {
+      const logText = data.text || data.line || '';
+      const stream = data.stream || 'stdout';
+      if (msgElement) {
+        let tray = document.getElementById(`tray-tools-${messageId}`);
+        if (tray) {
+          const body = tray.querySelector('.inspector-tray-body');
+          if (body) {
+            const row = document.createElement('div');
+            row.style.fontFamily = 'var(--font-mono)';
+            row.style.fontSize = '10.5px';
+            row.style.color = '#94a3b8';
+            row.textContent = `[${stream}] ${logText}`;
+            body.appendChild(row);
+            scrollToBottom();
+          }
+        }
+      }
     } else if (type === 'done') {
-      // Finished!
       if (msgElement) {
         const pill = msgElement.querySelector('.msg-status-pill');
         if (pill) {
@@ -890,6 +1215,7 @@
         activeSessionData = session;
         updateSessionTelemetryBar();
         renderChatSessionsList();
+        renderMessagesThread();
       });
 
     } else if (type === 'error') {

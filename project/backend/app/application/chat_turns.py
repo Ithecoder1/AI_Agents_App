@@ -13,7 +13,7 @@ import asyncio
 import logging
 import time
 from collections import OrderedDict
-from collections.abc import AsyncIterator
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
 
@@ -22,6 +22,12 @@ from app.application.chat_sessions import ChatSessionService
 from app.application.conversation_context import ConversationContextBuilder
 from app.application.registry import ProviderRegistry
 from app.application.stream_aggregator import MessageStreamAggregator
+from app.application.tools import DynamicToolRegistry, ToolRetriever
+from app.application.triage import (
+    LIGHTWEIGHT_SYSTEM_INSTRUCTIONS,
+    is_lightweight_query,
+)
+from app.application.turn_stream import StartedTurn, TurnStream
 from app.application.workspace_manager import WorkspaceManager
 from app.domain.chat import (
     STATUS_CANCELLED,
@@ -29,11 +35,11 @@ from app.domain.chat import (
     STATUS_ERROR,
     STATUS_STREAMING,
     ChatMessage,
-    ChatSession,
+    ContextSnapshot,
     MessageMetadata,
     MessageUsage,
 )
-from app.domain.enums import EventType
+from app.domain.enums import EventType, ExecutionMode
 from app.domain.errors import (
     ConflictError,
     ExecutionCancelledError,
@@ -43,69 +49,13 @@ from app.domain.errors import (
 from app.domain.models import ExecutionParams, ExecutionTask, Prompt, StreamEvent
 from app.domain.ports.agent_provider import IAgentProvider
 from app.domain.ports.chat import ChatRepository
+from app.domain.tools import ToolDescriptor
+
+__all__ = ["ChatTurnService", "StartedTurn", "TurnStream"]
 
 _log = logging.getLogger(__name__)
 
 DEFAULT_MODEL = "default"
-
-
-class TurnStream:
-    """Replayable in-memory event log for one running turn, with live subscription.
-
-    Event ``seq`` values are 1-based and gap-free; ``subscribe(after_seq=N)`` resumes after the
-    first ``N`` events (the WebSocket "cursor").
-    """
-
-    def __init__(self) -> None:
-        self._events: list[StreamEvent] = []
-        self._closed = False
-        self._cond = asyncio.Condition()
-
-    @property
-    def finished(self) -> bool:
-        return self._closed
-
-    @property
-    def events(self) -> tuple[StreamEvent, ...]:
-        return tuple(self._events)
-
-    async def publish(self, event: StreamEvent) -> StreamEvent:
-        async with self._cond:
-            stamped = event.with_seq(len(self._events) + 1)
-            self._events.append(stamped)
-            self._cond.notify_all()
-        return stamped
-
-    async def close(self) -> None:
-        async with self._cond:
-            self._closed = True
-            self._cond.notify_all()
-
-    async def subscribe(self, after_seq: int = 0) -> AsyncIterator[StreamEvent]:
-        index = max(after_seq, 0)
-        while True:
-            async with self._cond:
-                curr_idx = index
-
-                def can_progress(idx: int = curr_idx) -> bool:
-                    return idx < len(self._events) or self._closed
-
-                await self._cond.wait_for(can_progress)
-                batch = self._events[index:]
-                finished = self._closed and not batch
-            if finished:
-                return
-            for event in batch:
-                index += 1
-                yield event
-
-
-@dataclass(frozen=True, slots=True)
-class StartedTurn:
-    session: ChatSession
-    user_message: ChatMessage
-    assistant_message: ChatMessage  # persisted placeholder, status "streaming"
-    stream: TurnStream
 
 
 @dataclass(slots=True)
@@ -126,6 +76,7 @@ class ChatTurnService:
         registry: ProviderRegistry,
         workspaces: WorkspaceManager,
         context_builder: ConversationContextBuilder | None = None,
+        tool_registry: DynamicToolRegistry | None = None,
         *,
         flush_interval_s: float = 0.5,
         retain_finished: int = 50,
@@ -134,6 +85,7 @@ class ChatTurnService:
         self._repo = repository
         self._registry = registry
         self._workspaces = workspaces
+        self._tools = tool_registry
         self._context = context_builder or ConversationContextBuilder()
         self._flush_interval_s = flush_interval_s
         self._retain_finished = retain_finished
@@ -172,6 +124,8 @@ class ChatTurnService:
         model: str | None = None,
         temperature: float | None = None,
         max_tokens: int | None = None,
+        tools: Sequence[str] | None = None,
+        tool_mode: str | None = None,
     ) -> StartedTurn:
         """Persist the user message + assistant placeholder and start the run.
 
@@ -194,6 +148,8 @@ class ChatTurnService:
                 model=model,
                 temperature=temperature,
                 max_tokens=max_tokens,
+                tools=tools,
+                tool_mode=tool_mode,
             )
         except BaseException:
             self._busy.discard(session_id)
@@ -209,6 +165,8 @@ class ChatTurnService:
         model: str | None,
         temperature: float | None,
         max_tokens: int | None,
+        tools: Sequence[str] | None = None,
+        tool_mode: str | None = None,
     ) -> StartedTurn:
         session = await self._sessions.get_session(session_id)
         provider_id = provider_id or session.provider_id
@@ -222,38 +180,127 @@ class ChatTurnService:
         else:
             model_name = session.model_name
 
+        is_lightweight = is_lightweight_query(user_text)
+
+        # Resolve active tools, count, and schemas
+        active_descs: list[ToolDescriptor] = []
+        if not is_lightweight and self._tools is not None:
+            if tool_mode == "direct_qa":
+                active_descs = []
+            elif tools:
+                active_descs = [d for t in tools if (d := self._tools.get(t)) is not None]
+            else:
+                retriever = ToolRetriever(self._tools)
+                active_descs = list(retriever.get_active_tools())
+
+        active_tool_names = [t.name for t in active_descs]
+        injected_schemas = [
+            dict(t.schema) if t.schema else {"name": t.name, "description": t.summary}
+            for t in active_descs
+        ]
+
+        if is_lightweight:
+            enriched_instructions = LIGHTWEIGHT_SYSTEM_INSTRUCTIONS
+            context_items: tuple[ContextSnapshot, ...] = ()
+        else:
+            enriched_instructions = self._workspaces.enrich_system_instructions(
+                workspace, system_instructions, query=user_text
+            )
+            context_items = self._workspaces.collect_context_items(workspace, query=user_text)
+
+        ws_info = {
+            "id": workspace.project_id,
+            "name": workspace.name,
+            "root_path": str(workspace.root_path),
+            "runtime": getattr(workspace, "runtime", "python:3.10"),
+        }
+        prov_info = {
+            "id": provider_id,
+            "model": model_name,
+            "kind": getattr(provider.config, "kind", provider_id),
+            "display_name": getattr(provider.config, "display_name", provider_id),
+        }
+        full_context_payload: dict[str, Any] = {
+            "workspace": ws_info,
+            "provider": prov_info,
+            "system_instructions": enriched_instructions,
+            "active_tools": active_tool_names,
+            "active_tools_count": len(active_descs),
+            "injected_schemas": injected_schemas,
+            "context_items": [c.to_dict() for c in context_items],
+            "used_files": [],
+            "total_duration": None,
+            "usage_metrics": {},
+        }
+        full_context_payload_text = (
+            "=" * 40 + " [FULL CONTEXT PAYLOAD] " + "=" * 40 + "\n"
+            f"Workspace: {workspace.name} ({workspace.project_id})\n"
+            f"Provider: {provider_id} (model: {model_name})\n"
+            f"System Instructions: {enriched_instructions}\n"
+            f"Active Tools: {active_tool_names}\n"
+            f"Active Tools Count: {len(active_descs)}\n"
+            f"Context Items: {[c.label for c in context_items]}\n" + "=" * 100
+        )
+
+        turn_telemetry: dict[str, Any] = {
+            "system_instructions": enriched_instructions,
+            "active_tools": active_tool_names,
+            "active_tools_count": len(active_descs),
+            "injected_schemas": injected_schemas,
+            "full_context_payload": full_context_payload,
+            "full_context_payload_text": full_context_payload_text,
+            "workspace": ws_info,
+        }
+
+        extra_params: dict[str, Any] = {
+            "full_context_payload": full_context_payload,
+            "full_context_payload_text": full_context_payload_text,
+        }
+        if is_lightweight:
+            extra_params["direct_qa"] = True
+            extra_params["mode"] = "plan"
+
         params = ExecutionParams(
             provider_id=provider_id,
             model=None if model_name == DEFAULT_MODEL else model_name,
             temperature=temperature,
             max_tokens=max_tokens,
+            active_tools=tuple(active_descs),
+            execution_mode=(
+                ExecutionMode.DIRECT_QA
+                if (is_lightweight or tool_mode == "direct_qa")
+                else ExecutionMode.DYNAMIC_JIT
+            ),
+            extra=extra_params,
         )
         history = self._context.build_history(session.messages)
         prompt = Prompt(
             user_prompt=user_text,
-            system_instructions=self._workspaces.enrich_system_instructions(
-                workspace, system_instructions
-            ),
+            system_instructions=enriched_instructions,
             history=history,
             literal=True,
         )
         task = ExecutionTask.create(prompt, params, workspace=str(workspace.root_path)).start(
             provider_id
         )
-        context_items = self._workspaces.collect_context_items(workspace)
         run_info = {"provider_id": provider_id, "model": model_name}
 
         session = await self._sessions.prepare_for_turn(
             session, first_prompt=user_text, provider_id=provider_id, model_name=model_name
         )
-        user_draft = ChatMessage(session_id=session.id, role="user", content=user_text)
+        user_draft = ChatMessage(
+            session_id=session.id,
+            role="user",
+            content=user_text,
+            metadata=MessageMetadata(extensions=turn_telemetry),
+        )
         assistant_draft = ChatMessage(
             session_id=session.id,
             role="assistant",
             content="",
             metadata=MessageMetadata(
                 context_items=context_items,
-                extensions={**run_info, "status": STATUS_STREAMING},
+                extensions={**run_info, **turn_telemetry, "status": STATUS_STREAMING},
             ),
         )
         user_msg, assistant_msg = await self._repo.append_messages(
@@ -262,7 +309,7 @@ class ChatTurnService:
 
         stream = TurnStream()
         active = _ActiveTurn(session.id, assistant_msg.id, task, provider, stream)
-        aggregator = MessageStreamAggregator(context_items, run_info)
+        aggregator = MessageStreamAggregator(context_items, {**run_info, **turn_telemetry})
         writer = BufferedMessageWriter(
             self._repo, assistant_msg.id, aggregator, interval_s=self._flush_interval_s
         )
@@ -335,14 +382,51 @@ class ChatTurnService:
     ) -> None:
         """Persist the final state, roll up telemetry, publish the terminal event. Never raises."""
         try:
-            usage = MessageUsage.from_usage(
-                aggregator.usage, latency_ms=int((time.monotonic() - started) * 1000)
+            duration_s = round(time.monotonic() - started, 2)
+            usage = MessageUsage.from_usage(aggregator.usage, latency_ms=int(duration_s * 1000))
+            base_meta = aggregator.metadata(status)
+            used_files = base_meta.used_files
+            usage_metrics = {
+                "input_tokens": usage.input_tokens,
+                "output_tokens": usage.output_tokens,
+                "thinking_tokens": int(base_meta.extensions.get("thinking_tokens", 0)),
+                "cache_read_tokens": int(base_meta.extensions.get("cache_read_tokens", 0)),
+                "total_tokens": usage.total_tokens,
+            }
+            fcp = dict(base_meta.extensions.get("full_context_payload") or {})
+            fcp["used_files"] = used_files
+            fcp["total_duration"] = duration_s
+            fcp["usage_metrics"] = usage_metrics
+            fcp_text = (
+                "=" * 40 + " [FULL CONTEXT PAYLOAD] " + "=" * 40 + "\n"
+                f"Workspace: {fcp.get('workspace', {}).get('name', '')}\n"
+                f"Provider: {fcp.get('provider', {}).get('id', '')}\n"
+                f"System Instructions: {base_meta.system_instructions or ''}\n"
+                f"Active Tools: {base_meta.active_tools}\n"
+                f"Active Tools Count: {base_meta.active_tools_count}\n"
+                f"Used Files: {used_files}\n"
+                f"Used Files Count: {len(used_files)}\n"
+                f"Total Duration: {duration_s}s\n"
+                f"Usage Metrics: {usage_metrics}\n" + "=" * 100
             )
-            metadata = aggregator.metadata(status, **({"error": error} if error else {}))
+            extra_finish: dict[str, Any] = {
+                "full_context_payload": fcp,
+                "full_context_payload_text": fcp_text,
+                "total_duration": duration_s,
+                "used_files": used_files,
+                "usage_metrics": usage_metrics,
+            }
+            if error:
+                extra_finish["error"] = error
+            metadata = aggregator.metadata(status, **extra_finish)
             terminal: dict[str, Any] = {
                 "message_id": active.message_id,
                 "status": status,
                 "usage": usage.to_dict(),
+                "full_context_payload": fcp,
+                "total_duration": duration_s,
+                "used_files": used_files,
+                "usage_metrics": usage_metrics,
             }
             try:
                 await self._repo.finalize_message(

@@ -7,6 +7,12 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from app.domain.enums import EventType, ExecutionMode
+from app.domain.errors import (
+    AuthenticationError,
+    ProviderTimeoutError,
+    RateLimitedError,
+    TransientProviderError,
+)
 from app.domain.models import (
     AgentProviderConfig,
     MetricsEvent,
@@ -114,6 +120,7 @@ async def test_stream_execute_maps_ndjson_events() -> None:
     tool_call_event = next(e for e in events if e.type is EventType.TOOL_CALL)
     assert tool_call_event.data["name"] == "view_file"
     assert tool_call_event.data["args"]["AbsolutePath"] == "README.md"
+    assert "raw_payload" in tool_call_event.data
 
     # Verify usage token economy (minimal tokens, not blown up)
     usage_event = next(e for e in events if e.type is EventType.USAGE)
@@ -309,3 +316,143 @@ async def test_antigravity_telemetry_observer() -> None:
     assert ToolResultEvent in event_types
     assert TextDeltaEvent in event_types
     assert MetricsEvent in event_types
+
+
+@pytest.mark.asyncio
+async def test_antigravity_sdk_mode() -> None:
+    provider = _make_provider(mode="sdk")
+    status = await provider.health_check()
+    assert status.ok
+
+    task = running_task(user="hello sdk")
+    events = [e async for e in provider.stream_execute(task)]
+    types = [e.type for e in events]
+    assert EventType.STATUS in types
+    assert EventType.TOKEN in types
+    assert EventType.USAGE in types
+    assert EventType.DONE in types
+    assert any("Antigravity SDK" in str(e.data.get("text", "")) for e in events)
+
+
+@pytest.mark.asyncio
+async def test_antigravity_error_taxonomy_mapping() -> None:
+    provider = _make_provider(executable="agy")
+    task = running_task(user="fail please")
+
+    # Test rate limit error
+    mock_process = MagicMock()
+    mock_process.returncode = 1
+    mock_process.stdout = asyncio.StreamReader()
+    mock_process.stdout.feed_eof()
+    mock_process.stderr = asyncio.StreamReader()
+    mock_process.stderr.feed_data(b"Error: 429 rate limit exceeded\n")
+    mock_process.stderr.feed_eof()
+    mock_process.wait = AsyncMock(return_value=1)
+
+    with (
+        patch("asyncio.create_subprocess_exec", return_value=mock_process),
+        pytest.raises(RateLimitedError),
+    ):
+        _ = [e async for e in provider.stream_execute(task)]
+
+    # Test authentication error
+    mock_process.stderr = asyncio.StreamReader()
+    mock_process.stderr.feed_data(b"Error: 401 unauthorized or permission denied\n")
+    mock_process.stderr.feed_eof()
+    mock_process.stdout = asyncio.StreamReader()
+    mock_process.stdout.feed_eof()
+    with (
+        patch("asyncio.create_subprocess_exec", return_value=mock_process),
+        pytest.raises(AuthenticationError),
+    ):
+        _ = [e async for e in provider.stream_execute(task)]
+
+    # Test timeout error
+    mock_process.stderr = asyncio.StreamReader()
+    mock_process.stderr.feed_data(b"Error: connection timed out\n")
+    mock_process.stderr.feed_eof()
+    mock_process.stdout = asyncio.StreamReader()
+    mock_process.stdout.feed_eof()
+    with (
+        patch("asyncio.create_subprocess_exec", return_value=mock_process),
+        pytest.raises(ProviderTimeoutError),
+    ):
+        _ = [e async for e in provider.stream_execute(task)]
+
+    # Test generic transient error
+    mock_process.stderr = asyncio.StreamReader()
+    mock_process.stderr.feed_data(b"Error: unexpected internal failure\n")
+    mock_process.stderr.feed_eof()
+    mock_process.stdout = asyncio.StreamReader()
+    mock_process.stdout.feed_eof()
+    with (
+        patch("asyncio.create_subprocess_exec", return_value=mock_process),
+        pytest.raises(TransientProviderError),
+    ):
+        _ = [e async for e in provider.stream_execute(task)]
+
+
+@pytest.mark.asyncio
+async def test_antigravity_direct_qa_mode_cli_flags() -> None:
+    provider = _make_provider(executable="agy")
+    task = running_task(
+        user="hi",
+        execution_mode=ExecutionMode.DIRECT_QA,
+        extra={"direct_qa": True},
+    )
+
+    mock_process = MagicMock()
+    mock_process.returncode = 0
+    mock_process.stdout = asyncio.StreamReader()
+    mock_process.stdout.feed_data(b'{"event":"result","result":{"status":"SUCCESS"}}\n')
+    mock_process.stdout.feed_eof()
+    mock_process.stderr = asyncio.StreamReader()
+    mock_process.stderr.feed_eof()
+    mock_process.wait = AsyncMock(return_value=0)
+
+    with patch("asyncio.create_subprocess_exec", return_value=mock_process) as mock_exec:
+        _ = [e async for e in provider.stream_execute(task)]
+        assert mock_exec.called
+        call_args = list(mock_exec.call_args[0])
+        # Verify: --mode plan --disable-slash-commands --effort low
+        assert "--mode" in call_args
+        mode_idx = call_args.index("--mode")
+        assert call_args[mode_idx + 1] == "plan"
+        assert "--disable-slash-commands" in call_args
+        assert "--effort" in call_args
+        effort_idx = call_args.index("--effort")
+        assert call_args[effort_idx + 1] == "low"
+        # Constraint in prompt
+        assert any("[CONSTRAINT: Direct answer only." in str(a) for a in call_args)
+
+
+@pytest.mark.asyncio
+async def test_antigravity_popen_fallback_on_not_implemented_error() -> None:
+    provider = _make_provider(executable="agy")
+    task = running_task(user="hi")
+
+    mock_popen = MagicMock()
+    mock_popen.returncode = 0
+    mock_popen.stdout.readline.side_effect = [
+        b'{"event":"init","init":{"tools":[]}}\n',
+        b'{"event":"step_update","step_update":{"step_type":"agent_response","text_delta":"Hello!"}}\n',
+        b'{"event":"result","result":{"status":"SUCCESS"}}\n',
+        b"",
+    ]
+    mock_popen.stderr.readline.side_effect = [b""]
+    mock_popen.wait.return_value = 0
+
+    with (
+        patch(
+            "asyncio.create_subprocess_exec",
+            side_effect=NotImplementedError("Windows selector loop"),
+        ),
+        patch("subprocess.Popen", return_value=mock_popen) as mock_popen_cls,
+    ):
+        events = [e async for e in provider.stream_execute(task)]
+        assert mock_popen_cls.called
+        event_types = [e.type for e in events]
+        assert EventType.STATUS in event_types
+        assert EventType.TOKEN in event_types
+        assert EventType.DONE in event_types
+        assert any("Hello!" in str(e.data.get("text", "")) for e in events)

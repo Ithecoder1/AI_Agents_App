@@ -198,7 +198,7 @@ async def test_shipped_config_boots_and_fake_provider_resolves_and_runs() -> Non
 
     assert states["fake"] is ProviderState.READY
     assert states["openrouter-default"] is ProviderState.DISABLED
-    assert states["antigravity-headless"] is ProviderState.DISABLED
+    assert states["antigravity-headless"] is ProviderState.READY
     assert settings.server.host == "127.0.0.1"  # safe-by-default
 
     provider = registry.resolve("fake")

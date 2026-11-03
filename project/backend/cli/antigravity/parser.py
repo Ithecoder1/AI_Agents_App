@@ -12,6 +12,20 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("prompt", nargs="?", default="", help="Target prompt for the agent")
     parser.add_argument(
+        "-p",
+        "--print",
+        dest="print_prompt",
+        type=str,
+        default=None,
+        help="Target prompt for the agent (alias for positional prompt)",
+    )
+    parser.add_argument(
+        "--output-format",
+        choices=["text", "json", "stream-json"],
+        default="text",
+        help="Output format for agy execution (text, json, stream-json)",
+    )
+    parser.add_argument(
         "--direct-qa",
         action="store_true",
         help="Bypass tool injection entirely (0-tool pure text mode)",
@@ -53,6 +67,19 @@ def build_parser() -> argparse.ArgumentParser:
         "--skip-permissions",
         action="store_true",
         help="Auto-approve all tool permission requests",
+    )
+    parser.add_argument(
+        "--system",
+        "--system-instructions",
+        dest="system_instructions",
+        type=str,
+        default=None,
+        help="Optional system instructions override for this session",
+    )
+    parser.add_argument(
+        "--no-metrics",
+        action="store_true",
+        help="Suppress printing turn metrics to terminal",
     )
     return parser
 

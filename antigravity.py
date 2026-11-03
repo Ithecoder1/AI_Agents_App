@@ -8,6 +8,11 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+if sys.stdout and hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+if sys.stderr and hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
 # Add project/backend to sys.path so 'app', 'providers', and 'cli' can be resolved
 WORKSPACE_ROOT = Path(__file__).resolve().parent
 BACKEND_ROOT = WORKSPACE_ROOT / "project" / "backend"

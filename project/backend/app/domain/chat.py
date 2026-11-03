@@ -264,6 +264,115 @@ class MessageMetadata:
     def status(self) -> str:
         return _s(self.extensions.get("status"), STATUS_COMPLETE)
 
+    @property
+    def system_instructions(self) -> str | None:
+        val = self.extensions.get("system_instructions")
+        return str(val) if val is not None else None
+
+    @property
+    def active_tools(self) -> list[str]:
+        val = self.extensions.get("active_tools")
+        if isinstance(val, (list, tuple)):
+            return [str(t) for t in val]
+        return []
+
+    @property
+    def active_tools_count(self) -> int:
+        val = self.extensions.get("active_tools_count")
+        if val is not None:
+            try:
+                return int(val)
+            except (ValueError, TypeError):
+                pass
+        return len(self.active_tools)
+
+    @property
+    def injected_schemas(self) -> list[dict[str, Any]]:
+        val = self.extensions.get("injected_schemas")
+        if isinstance(val, list):
+            return [dict(s) for s in val if isinstance(s, Mapping)]
+        if isinstance(val, Mapping):
+            return [dict(val)]
+        return []
+
+    @property
+    def used_files(self) -> list[str]:
+        val = self.extensions.get("used_files")
+        if isinstance(val, (list, tuple)):
+            return [str(f) for f in val]
+        files: list[str] = []
+        file_keys = {"absolutepath", "targetfile", "filepath", "path", "filename", "file"}
+        for call in self.tool_calls:
+            for k, v in call.args.items():
+                if (
+                    k.lower().replace("_", "") in file_keys
+                    and isinstance(v, str)
+                    and v.strip()
+                    and v.strip() not in files
+                ):
+                    files.append(v.strip())
+        return files
+
+    @property
+    def total_duration(self) -> float | None:
+        val = self.extensions.get("total_duration")
+        if val is None:
+            val = self.extensions.get("duration_seconds")
+        if val is not None:
+            try:
+                return float(val)
+            except (ValueError, TypeError):
+                pass
+        return None
+
+    @property
+    def usage_metrics(self) -> dict[str, int]:
+        val = self.extensions.get("usage_metrics")
+        if val is None:
+            val = self.extensions.get("usage")
+        if isinstance(val, Mapping):
+            in_tok = int(val.get("input_tokens", val.get("prompt_tokens", 0)))
+            out_tok = int(val.get("output_tokens", val.get("completion_tokens", 0)))
+            think_tok = int(val.get("thinking_tokens", 0))
+            cache_tok = int(val.get("cache_read_tokens", 0))
+            total_tok = int(val.get("total_tokens", in_tok + out_tok))
+            return {
+                "input_tokens": in_tok,
+                "output_tokens": out_tok,
+                "thinking_tokens": think_tok,
+                "cache_read_tokens": cache_tok,
+                "total_tokens": total_tok,
+            }
+        return {}
+
+    @property
+    def full_context_payload(self) -> dict[str, Any]:
+        val = self.extensions.get("full_context_payload")
+        if isinstance(val, Mapping):
+            return dict(val)
+        return {
+            "workspace": dict(self.extensions.get("workspace") or {}),
+            "provider": {
+                "provider_id": self.extensions.get("provider_id"),
+                "model": self.extensions.get("model"),
+            },
+            "system_instructions": self.system_instructions,
+            "active_tools": self.active_tools,
+            "active_tools_count": self.active_tools_count,
+            "injected_schemas": self.injected_schemas,
+            "used_files": self.used_files,
+            "context_items": [c.to_dict() for c in self.context_items],
+            "total_duration": self.total_duration,
+            "usage_metrics": self.usage_metrics,
+        }
+
+    @property
+    def full_context_payload_text(self) -> str:
+        val = self.extensions.get("full_context_payload_text")
+        if val is not None:
+            return str(val)
+        return ""
+
     def with_extensions(self, **values: Any) -> MessageMetadata:
         return replace(self, extensions={**self.extensions, **values})
 
@@ -274,6 +383,15 @@ class MessageMetadata:
             "plan": self.plan.to_dict() if self.plan else None,
             "tool_calls": [t.to_dict() for t in self.tool_calls],
             "logs": [entry.to_dict() for entry in self.logs],
+            "system_instructions": self.system_instructions,
+            "active_tools": self.active_tools,
+            "active_tools_count": self.active_tools_count,
+            "injected_schemas": self.injected_schemas,
+            "used_files": self.used_files,
+            "total_duration": self.total_duration,
+            "usage_metrics": self.usage_metrics,
+            "full_context_payload": self.full_context_payload,
+            "full_context_payload_text": self.full_context_payload_text,
             "extensions": dict(self.extensions),
         }
 
@@ -282,7 +400,21 @@ class MessageMetadata:
         if not isinstance(data, Mapping):
             return cls()
         plan = data.get("plan")
-        extensions = data.get("extensions")
+        raw_ext = data.get("extensions")
+        extensions = dict(raw_ext) if isinstance(raw_ext, Mapping) else {}
+        for key in (
+            "system_instructions",
+            "active_tools",
+            "active_tools_count",
+            "injected_schemas",
+            "used_files",
+            "total_duration",
+            "usage_metrics",
+            "full_context_payload",
+            "full_context_payload_text",
+        ):
+            if key in data and key not in extensions:
+                extensions[key] = data[key]
         return cls(
             context_items=tuple(
                 ContextSnapshot.from_dict(c) for c in _items(data.get("context_items"))
@@ -291,7 +423,7 @@ class MessageMetadata:
             plan=ExecutionPlan.from_dict(plan) if isinstance(plan, Mapping) else None,
             tool_calls=tuple(ToolCallRecord.from_dict(t) for t in _items(data.get("tool_calls"))),
             logs=tuple(LogEntry.from_dict(entry) for entry in _items(data.get("logs"))),
-            extensions=dict(extensions) if isinstance(extensions, Mapping) else {},
+            extensions=extensions,
         )
 
 

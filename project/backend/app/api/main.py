@@ -8,8 +8,13 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import sys
 from collections.abc import AsyncIterator
 from typing import Any
+
+if sys.platform == "win32":
+    with contextlib.suppress(Exception):
+        asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
@@ -105,6 +110,10 @@ class SendChatMessageRequest(BaseModel):
     model: str | None = Field(None, description="Optional model override")
     temperature: float | None = Field(None, description="Optional temperature override")
     max_tokens: int | None = Field(None, description="Optional max tokens override")
+    tools: list[str] | None = Field(None, description="Optional tools override for this turn")
+    tool_mode: str | None = Field(
+        None, description="Optional tool mode: 'dynamic' | 'direct_qa' | 'full'"
+    )
 
 
 # --- REST Endpoints -------------------------------------------------------- #
@@ -286,6 +295,8 @@ async def send_chat_message_endpoint(
             model=request.model,
             temperature=request.temperature,
             max_tokens=request.max_tokens,
+            tools=request.tools,
+            tool_mode=request.tool_mode,
         )
         return {
             "session_id": session_id,
@@ -340,7 +351,9 @@ async def execute_task(request: ExecuteRequest) -> dict[str, Any]:
     except ValidationError as exc:
         raise HTTPException(status_code=404, detail={"error": str(exc)}) from exc
 
-    enriched_system = workspace_manager.enrich_system_instructions(ws, request.system_instructions)
+    enriched_system = workspace_manager.enrich_system_instructions(
+        ws, request.system_instructions, query=request.user_prompt
+    )
     prompt = Prompt(
         user_prompt=request.user_prompt,
         system_instructions=enriched_system,
@@ -414,7 +427,9 @@ async def _handle_websocket_execution(
             await websocket.close()
             return
 
-        enriched_system = workspace_manager.enrich_system_instructions(ws, system_instructions)
+        enriched_system = workspace_manager.enrich_system_instructions(
+            ws, system_instructions, query=user_prompt
+        )
         prompt = Prompt(user_prompt=user_prompt, system_instructions=enriched_system)
         params = ExecutionParams(provider_id=provider_id, model=model)
         task = ExecutionTask.create(
@@ -452,6 +467,24 @@ async def websocket_execute(websocket: WebSocket) -> None:
 async def websocket_workspace_events(websocket: WebSocket, workspace_id: str) -> None:
     """Real-time execution stream scoped strictly to a specific workspace."""
     await _handle_websocket_execution(websocket, explicit_workspace_id=workspace_id)
+
+
+@app.websocket("/api/workspaces/{workspace_id}/chats/{session_id}/ws")
+@app.websocket("/api/workspaces/{workspace_id}/chats/{session_id}/events")
+async def websocket_workspace_chat_session_events(
+    websocket: WebSocket,
+    workspace_id: str,
+    session_id: str,
+    cursor: int = 0,
+    message_id: str | None = None,
+) -> None:
+    """Stream live execution events for a chat session within a specific workspace."""
+    await websocket_chat_session_events(
+        websocket=websocket,
+        session_id=session_id,
+        cursor=cursor,
+        message_id=message_id,
+    )
 
 
 @app.websocket("/api/chats/{session_id}/events")
@@ -500,6 +533,10 @@ async def websocket_chat_session_events(
                         "status": last_msg.metadata.status,
                         "usage": last_msg.usage.to_dict(),
                         "finish_reason": last_msg.metadata.extensions.get("finish_reason", "stop"),
+                        "full_context_payload": last_msg.metadata.full_context_payload,
+                        "total_duration": last_msg.metadata.total_duration,
+                        "used_files": last_msg.metadata.used_files,
+                        "usage_metrics": last_msg.metadata.usage_metrics,
                     },
                     "seq": 1,
                 }
@@ -519,7 +556,10 @@ async def websocket_chat_session_events(
     listener = asyncio.create_task(listen_incoming())
     try:
         async for event in stream.subscribe(after_seq=cursor):
-            await websocket.send_json(event.to_dict())
+            event_dict = event.to_dict()
+            if "raw_payload" in event.data and "raw_payload" not in event_dict:
+                event_dict["raw_payload"] = event.data["raw_payload"]
+            await websocket.send_json(event_dict)
     except WebSocketDisconnect:
         pass
     except Exception as exc:

@@ -61,7 +61,7 @@ providers:
     kind: antigravity
     display_name: Antigravity (headless)
     adapter: providers.adapters.antigravity:AntigravityProvider
-    enabled: false
+    enabled: true
     max_concurrency: 1
     options:
       mode: cli                 # cli | sdk

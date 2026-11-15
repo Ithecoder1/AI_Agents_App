@@ -516,8 +516,10 @@
       fcp.executed_command = executedCommand;
     }
 
+    const rawEvents = meta.raw_events || meta.extensions?.raw_events || activeStreamEvents[msgId] || [];
     const rawPayload = {
       full_context_payload: fcp,
+      ...(rawEvents && rawEvents.length ? { raw_events: rawEvents } : {}),
       ...(extraData.thoughts?.length ? { thoughts: extraData.thoughts } : {}),
       ...(extraData.toolCalls?.length ? { tool_calls: extraData.toolCalls } : {}),
       ...(extraData.logs?.length ? { logs: extraData.logs } : {}),
@@ -1085,7 +1087,8 @@
 
   function handleStreamEvent(event, messageId) {
     activeStreamEvents[messageId] = activeStreamEvents[messageId] || [];
-    activeStreamEvents[messageId].push(event);
+    const rawItem = event.raw_payload || event.data?.raw_payload || event;
+    activeStreamEvents[messageId].push(rawItem);
 
     const type = event.type;
     const data = event.data || {};

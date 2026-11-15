@@ -30,14 +30,16 @@ class AntigravityCommandBuilder:
             )
             if constraint not in final_prompt:
                 final_prompt = f"{constraint}\n\n{final_prompt}"
-        elif target_tools:
-            tools_str = ", ".join(sorted(target_tools))
-            boundary = (
-                f"[ALLOWED TOOLS STRICT WHITELIST: {tools_str}. "
-                "Calling any unlisted tool is strictly forbidden.]"
-            )
-            if boundary not in final_prompt:
-                final_prompt = f"{boundary}\n\n{final_prompt}"
+        else:
+            real_tools = {t for t in target_tools if t != "search_available_tools"}
+            if real_tools:
+                tools_str = ", ".join(sorted(real_tools))
+                boundary = (
+                    f"[ALLOWED TOOLS STRICT WHITELIST: {tools_str}. "
+                    "Calling any unlisted tool is strictly forbidden.]"
+                )
+                if boundary not in final_prompt:
+                    final_prompt = f"{boundary}\n\n{final_prompt}"
         return final_prompt
 
     @classmethod
@@ -75,11 +77,12 @@ class AntigravityCommandBuilder:
         if "--effort" not in extra_args:
             effort_flags = ["--effort", "low"]
 
-        has_write_tools = bool(target_tools & WRITE_TOOLS)
+        real_tools = {t for t in target_tools if t != "search_available_tools"}
+        has_write_tools = bool(real_tools & WRITE_TOOLS)
 
         if is_direct_qa or (mode == "plan"):
             cmd.extend(["--mode", "plan", "--disable-slash-commands", *effort_flags])
-        elif target_tools:
+        elif real_tools:
             if not has_write_tools:
                 cmd.extend(["--mode", "plan", "--disable-slash-commands"])
             else:

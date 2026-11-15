@@ -389,6 +389,13 @@ class MessageMetadata:
             return str(val)
         return ""
 
+    @property
+    def raw_events(self) -> list[dict[str, Any]]:
+        val = self.extensions.get("raw_events")
+        if isinstance(val, list):
+            return [dict(e) for e in val if isinstance(e, Mapping)]
+        return []
+
     def with_extensions(self, **values: Any) -> MessageMetadata:
         return replace(self, extensions={**self.extensions, **values})
 
@@ -409,6 +416,7 @@ class MessageMetadata:
             "full_context_payload": self.full_context_payload,
             "full_context_payload_text": self.full_context_payload_text,
             "executed_command": self.executed_command,
+            "raw_events": self.raw_events,
             "extensions": dict(self.extensions),
         }
 
@@ -430,6 +438,7 @@ class MessageMetadata:
             "full_context_payload",
             "full_context_payload_text",
             "executed_command",
+            "raw_events",
         ):
             if key in data and key not in extensions:
                 extensions[key] = data[key]

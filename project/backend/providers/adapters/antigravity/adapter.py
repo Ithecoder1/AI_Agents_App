@@ -180,7 +180,13 @@ class AntigravityProvider(BaseAgentRunner):
             mode=task.params.extra.get("mode"),
         )
 
-        mode_label = "direct_qa (0-tool)" if is_direct_qa else "dynamic_tools"
+        real_tools = {t for t in target_tools if t != "search_available_tools"}
+        if is_direct_qa:
+            mode_label = "direct_qa (0-tool)"
+        elif real_tools:
+            mode_label = f"whitelist_tools ({len(real_tools)})"
+        else:
+            mode_label = "full_toolkit (60-tools)"
         cmd_str = subprocess.list2cmdline(cmd)
         yield self.event(
             task,

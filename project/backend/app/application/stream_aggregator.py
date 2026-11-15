@@ -50,6 +50,7 @@ class MessageStreamAggregator:
         self._tool_calls: list[ToolCallRecord] = []
         self._logs: list[LogEntry] = []
         self._artifacts: list[Mapping[str, Any]] = []
+        self._raw_events: list[dict[str, Any]] = []
         self.usage = Usage()
         self.finish_reason: str | None = None
 
@@ -64,6 +65,8 @@ class MessageStreamAggregator:
             extensions["finish_reason"] = self.finish_reason
         if self._artifacts:
             extensions["artifacts"] = [dict(a) for a in self._artifacts]
+        if self._raw_events:
+            extensions["raw_events"] = [dict(e) for e in self._raw_events]
         return MessageMetadata(
             context_items=self._context_items,
             thoughts=tuple(self._thoughts),
@@ -77,6 +80,11 @@ class MessageStreamAggregator:
     def apply(self, event: StreamEvent) -> bool:
         data = event.data
         kind = event.type
+        raw = data.get("raw_payload")
+        if isinstance(raw, Mapping):
+            raw_d = dict(raw)
+            if not self._raw_events or self._raw_events[-1] != raw_d:
+                self._raw_events.append(raw_d)
         if kind is not EventType.THOUGHT:
             self._thought_open = False
 

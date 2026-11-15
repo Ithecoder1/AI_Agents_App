@@ -437,6 +437,7 @@ class ChatTurnService:
                 "total_duration": duration_s,
                 "used_files": used_files,
                 "usage_metrics": usage_metrics,
+                "raw_events": base_meta.extensions.get("raw_events", []),
             }
             if executed_command:
                 terminal["executed_command"] = executed_command

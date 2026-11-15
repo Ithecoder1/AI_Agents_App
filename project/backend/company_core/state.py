@@ -3,7 +3,19 @@
 from __future__ import annotations
 
 import datetime
-from typing import Any, TypedDict
+from typing import Any
+
+from app.domain.graph_state import (
+    ALL_GRAPH_STATUSES,
+    STATUS_COMPLETED,
+    STATUS_FAILED,
+    STATUS_PENDING,
+    STATUS_RUNNING,
+    STATUS_WAITING_APPROVAL,
+    GraphState,
+    GraphStatus,
+    create_initial_graph_state,
+)
 
 # Canonical Phase Enumerations
 PHASE_ARCHITECT = "ARCHITECT"
@@ -25,20 +37,10 @@ ALL_PHASES = (
 )
 
 
-class CompanyState(TypedDict):
+class CompanyState(GraphState):
     """Centralized state shared across all autonomous startup agents."""
 
-    project_id: str
-    user_requirement: str
-    current_phase: str  # "ARCHITECT" | "CODER" | "QA" | "DEVOPS" | "COMPLETED" | "FAILED"
-    architecture_spec: str | None
-    code_files: dict[str, str]  # filepath -> file content
-    test_results: str | None
-    execution_logs: list[dict[str, Any]]
-    completed_tasks: list[str]
-    failed_tasks: list[str]
-    error_message: str | None
-    retry_count: int
+    pass
 
 
 def create_initial_state(
@@ -46,31 +48,45 @@ def create_initial_state(
     project_id: str = "vibe-app",
     *,
     initial_phase: str = PHASE_ARCHITECT,
+    session_id: str | None = None,
+    initial_status: GraphStatus = STATUS_PENDING,
 ) -> CompanyState:
-    """Factory helper to build a clean CompanyState instance."""
+    """Factory helper to build a clean CompanyState instance with GraphState compliance."""
     now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    sid = session_id or f"sess-{project_id}"
+    req_clean = user_requirement.strip()
+
     return CompanyState(
+        session_id=sid,
         project_id=project_id,
-        user_requirement=user_requirement.strip(),
-        current_phase=initial_phase,
-        architecture_spec=None,
-        code_files={},
-        test_results=None,
+        user_requirement=req_clean,
+        current_node="triage_node",
+        messages=[{"role": "user", "content": req_clean}],
+        active_tools=[],
+        subgraph_results={},
         execution_logs=[
             {
                 "timestamp": now_iso,
                 "agent": "system",
                 "phase": initial_phase,
                 "message": (
-                    f"Initialized project {project_id!r} with requirement: "
-                    f"{user_requirement[:80]!r}"
+                    f"Initialized project {project_id!r} with requirement: {req_clean[:80]!r}"
                 ),
             }
         ],
+        status=initial_status,
+        current_phase=initial_phase,
+        architecture_spec=None,
+        code_files={},
+        test_results=None,
         completed_tasks=[],
         failed_tasks=[],
         error_message=None,
         retry_count=0,
+        max_retries=3,
+        auto_approve=True,
+        plan=[],
+        task_type="DEFAULT",
     )
 
 
@@ -91,3 +107,27 @@ def append_execution_log(
     if details:
         entry["details"] = details
     return [*logs, entry]
+
+
+__all__ = [
+    "ALL_GRAPH_STATUSES",
+    "ALL_PHASES",
+    "PHASE_ARCHITECT",
+    "PHASE_CODER",
+    "PHASE_COMPLETED",
+    "PHASE_DECOMPOSE",
+    "PHASE_DEVOPS",
+    "PHASE_FAILED",
+    "PHASE_QA",
+    "STATUS_COMPLETED",
+    "STATUS_FAILED",
+    "STATUS_PENDING",
+    "STATUS_RUNNING",
+    "STATUS_WAITING_APPROVAL",
+    "CompanyState",
+    "GraphState",
+    "GraphStatus",
+    "append_execution_log",
+    "create_initial_graph_state",
+    "create_initial_state",
+]

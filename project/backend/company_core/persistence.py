@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import tempfile
+import time
 from pathlib import Path
 
 from langchain_core.runnables import RunnableConfig
@@ -38,13 +40,29 @@ def save_company_state(state: CompanyState, filepath: Path | str | None = None) 
     # Serialize with nice formatting
     payload = json.dumps(state, indent=2, ensure_ascii=False)
 
-    # Atomic write via temp file + replace
+    # Atomic write via temp file + replace with Windows retry fallback
     temp_dir = path.parent
     with tempfile.NamedTemporaryFile("w", dir=temp_dir, delete=False, encoding="utf-8") as tf:
         tf.write(payload)
         temp_name = tf.name
 
-    os.replace(temp_name, path)
+    try:
+        os.replace(temp_name, path)
+    except PermissionError:
+        # On Windows, retry briefly or fallback to direct write on file contention
+        replaced = False
+        for _ in range(5):
+            time.sleep(0.05)
+            try:
+                os.replace(temp_name, path)
+                replaced = True
+                break
+            except PermissionError:
+                pass
+        if not replaced:
+            path.write_text(payload, encoding="utf-8")
+            with contextlib.suppress(OSError):
+                os.unlink(temp_name)
     return path
 
 

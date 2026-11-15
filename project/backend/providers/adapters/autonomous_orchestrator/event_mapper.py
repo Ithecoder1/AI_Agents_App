@@ -41,14 +41,17 @@ class StartupNodeEventMapper:
         """Convert a single node execution snapshot into corresponding domain events."""
         events: list[StreamEvent] = []
 
-        if node_name == "ceo_router":
-            curr_phase = state_snapshot.get("current_phase")
+        if node_name in ("ceo_router", "triage_node"):
+            curr_phase = state_snapshot.get("current_phase") or state_snapshot.get("status")
             events.append(
                 StreamEvent.create(
                     task_id,
                     attempt,
                     EventType.THOUGHT,
-                    text=f"CEO Orchestrator: Evaluated requirement. Roadmap phase: {curr_phase}.",
+                    text=(
+                        f"CEO Orchestrator: Evaluated requirement. "
+                        f"Roadmap phase/status: {curr_phase}."
+                    ),
                 )
             )
             events.append(
@@ -61,7 +64,49 @@ class StartupNodeEventMapper:
                 )
             )
 
-        elif node_name == "architect":
+        elif node_name == "planner_node":
+            plan = state_snapshot.get("plan") or []
+            if plan:
+                formatted_steps = [
+                    {
+                        "title": (
+                            f"{s.get('step', i + 1)}. "
+                            f"{s.get('description', s.get('action', 'Step'))}"
+                        ),
+                        "status": "pending",
+                    }
+                    for i, s in enumerate(plan)
+                ]
+                events.append(
+                    StreamEvent.create(
+                        task_id,
+                        attempt,
+                        EventType.PLAN,
+                        summary="Deterministic Orchestration Plan",
+                        steps=formatted_steps,
+                    )
+                )
+            events.append(
+                StreamEvent.create(
+                    task_id,
+                    attempt,
+                    EventType.THOUGHT,
+                    text=f"Planner: Synthesized deterministic plan with {len(plan)} steps.",
+                )
+            )
+
+        elif node_name == "subgraph_router_node":
+            task_type = state_snapshot.get("task_type", "FULL_PIPELINE")
+            events.append(
+                StreamEvent.create(
+                    task_id,
+                    attempt,
+                    EventType.THOUGHT,
+                    text=f"Subgraph Router: Delegating control for task type: '{task_type}'.",
+                )
+            )
+
+        elif node_name in ("architect", "architect_subgraph", "schema_validator_node"):
             self.plan_steps[0]["status"] = "done"
             self.plan_steps[1]["status"] = "in_progress"
             events.append(
@@ -106,7 +151,7 @@ class StartupNodeEventMapper:
                 )
             )
 
-        elif node_name == "coder":
+        elif node_name in ("coder", "coder_node", "coder_qa_subgraph"):
             self.plan_steps[1]["status"] = "done"
             self.plan_steps[2]["status"] = "in_progress"
             events.append(
@@ -159,7 +204,7 @@ class StartupNodeEventMapper:
                 )
             )
 
-        elif node_name == "devops":
+        elif node_name in ("devops", "devops_test_node"):
             self.plan_steps[2]["status"] = "done"
             self.plan_steps[3]["status"] = "in_progress"
             events.append(
@@ -189,7 +234,7 @@ class StartupNodeEventMapper:
                 )
             )
 
-        elif node_name == "qa":
+        elif node_name in ("qa", "evaluator_node"):
             test_results = state_snapshot.get("test_results") or ""
             passed = "PASSED" in test_results
             if passed:
@@ -218,6 +263,27 @@ class StartupNodeEventMapper:
                     stream="stdout" if passed else "stderr",
                 )
             )
+
+        elif node_name == "executor_node":
+            messages = state_snapshot.get("messages") or []
+            last_text = messages[-1].get("content", "") if messages else ""
+            events.append(
+                StreamEvent.create(
+                    task_id,
+                    attempt,
+                    EventType.THOUGHT,
+                    text="Executor: Delivered direct response.",
+                )
+            )
+            if last_text:
+                events.append(
+                    StreamEvent.create(
+                        task_id,
+                        attempt,
+                        EventType.TOKEN,
+                        text=last_text,
+                    )
+                )
 
         elif node_name == "task_decomposer":
             events.append(

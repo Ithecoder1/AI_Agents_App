@@ -24,6 +24,10 @@ from company_core.agents import (
     TaskDecomposerAgent,
 )
 from company_core.config import ConfigManager, get_config
+from company_core.orchestrator_graph import (
+    compile_orchestrator_workflow,
+    create_orchestrator_workflow,
+)
 from company_core.persistence import (
     JsonStateCheckpointer,
     can_resume,
@@ -143,6 +147,61 @@ class AutonomousStartupOrchestrator:
             workflow = self.assemble_workflow()
             self._compiled_graph = workflow.compile(checkpointer=self.checkpointer)
         return self._compiled_graph
+
+    def assemble_master_workflow(
+        self,
+        provider: Any | None = None,
+        tool_registry: Any | None = None,
+    ) -> StateGraph[Any, Any, Any, Any]:
+        """Assemble the deterministic LangGraph master graph with isolated subgraphs."""
+        return create_orchestrator_workflow(
+            project_root_resolver=self.project_root_resolver,
+            tool_registry=tool_registry,
+            provider=provider,
+            simulate_initial_bug=self.simulate_initial_bug,
+            max_retries=self.max_retries,
+        )
+
+    def compile_master_workflow(
+        self,
+        provider: Any | None = None,
+        tool_registry: Any | None = None,
+    ) -> CompiledStateGraph[Any, Any, Any, Any]:
+        """Compile the deterministic LangGraph master graph with subgraphs ready for execution."""
+        return compile_orchestrator_workflow(
+            checkpointer=self.checkpointer,
+            project_root_resolver=self.project_root_resolver,
+            tool_registry=tool_registry,
+            provider=provider,
+            simulate_initial_bug=self.simulate_initial_bug,
+            max_retries=self.max_retries,
+        )
+
+    def run_master_workflow(
+        self,
+        user_requirement: str,
+        project_id: str = "vibe-app",
+        provider: Any | None = None,
+        tool_registry: Any | None = None,
+        resume_if_possible: bool = True,
+        reset_state: bool = False,
+    ) -> CompanyState:
+        """Execute the master deterministic orchestrator workflow with subgraphs."""
+        initial_state = self.prepare_initial_state(
+            user_requirement=user_requirement,
+            project_id=project_id,
+            resume_if_possible=resume_if_possible,
+            reset_state=reset_state,
+        )
+        compiled_master = self.compile_master_workflow(
+            provider=provider,
+            tool_registry=tool_registry,
+        )
+        config: RunnableConfig = {"configurable": {"thread_id": project_id}}
+        final_state: CompanyState = cast(
+            CompanyState, compiled_master.invoke(initial_state, config=config)
+        )
+        return final_state
 
     def prepare_initial_state(
         self,

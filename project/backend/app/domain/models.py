@@ -25,6 +25,11 @@ from app.domain.events import (
     ToolResultEvent,
     telemetry_from_stream_event,
 )
+from app.domain.graph_state import (
+    GraphState,
+    GraphStatus,
+    create_initial_graph_state,
+)
 from app.domain.providers import (
     AgentProviderConfig,
     HealthStatus,
@@ -238,6 +243,8 @@ __all__ = [
     "ExecutionParams",
     "ExecutionResult",
     "ExecutionTask",
+    "GraphState",
+    "GraphStatus",
     "HealthStatus",
     "MetricsEvent",
     "ProjectManifest",
@@ -251,6 +258,7 @@ __all__ = [
     "ToolResultEvent",
     "Usage",
     "WorkspaceContext",
+    "create_initial_graph_state",
     "new_id",
     "telemetry_from_stream_event",
     "utcnow",

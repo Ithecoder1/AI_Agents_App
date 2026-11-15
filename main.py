@@ -38,6 +38,7 @@ def run_orchestrator(
     reset_state: bool = False,
     simulate_initial_bug: bool = False,
     checkpoint_file: str = "logs/company_state.json",
+    use_master_graph: bool = False,
 ) -> CompanyState:
     """Instantiate and run the AutonomousStartupOrchestrator engine."""
     checkpoint_path = WORKSPACE_ROOT / checkpoint_file
@@ -64,16 +65,29 @@ def run_orchestrator(
         simulate_initial_bug=simulate_initial_bug,
     )
 
+    engine_label = (
+        "LangGraph Master Graph & Sub-Graphs"
+        if use_master_graph
+        else "LangGraph Engine"
+    )
     print("=" * 70)
-    print("  ORCHESTRATION PIPELINE STARTING (LangGraph Engine)")
+    print(f"  ORCHESTRATION PIPELINE STARTING ({engine_label})")
     print("=" * 70)
 
-    final_state = orchestrator.run(
-        user_requirement=user_requirement,
-        project_id=project_id,
-        resume_if_possible=resume_if_possible,
-        reset_state=reset_state,
-    )
+    if use_master_graph:
+        final_state = orchestrator.run_master_workflow(
+            user_requirement=user_requirement,
+            project_id=project_id,
+            resume_if_possible=resume_if_possible,
+            reset_state=reset_state,
+        )
+    else:
+        final_state = orchestrator.run(
+            user_requirement=user_requirement,
+            project_id=project_id,
+            resume_if_possible=resume_if_possible,
+            reset_state=reset_state,
+        )
 
     print("\n" + "=" * 70)
     print("  ORCHESTRATION PIPELINE FINISHED")
@@ -141,6 +155,12 @@ def main() -> None:
         action="store_true",
         help="Inject a deliberate bug on attempt 0 to demonstrate QA self-correction loop",
     )
+    parser.add_argument(
+        "--master-graph",
+        action="store_true",
+        default=False,
+        help="Execute using deterministic LangGraph Master Graph with Sub-Graph delegation",
+    )
 
     args = parser.parse_args()
 
@@ -150,6 +170,7 @@ def main() -> None:
         resume_if_possible=args.resume,
         reset_state=args.reset,
         simulate_initial_bug=args.simulate_bug,
+        use_master_graph=args.master_graph,
     )
 
 

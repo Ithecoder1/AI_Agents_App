@@ -114,6 +114,9 @@ class SendChatMessageRequest(BaseModel):
     tool_mode: str | None = Field(
         None, description="Optional tool mode: 'dynamic' | 'direct_qa' | 'full'"
     )
+    require_approval: bool | None = Field(
+        None, description="Optional approval gating flag before heavy processing"
+    )
 
 
 # --- REST Endpoints -------------------------------------------------------- #
@@ -297,6 +300,7 @@ async def send_chat_message_endpoint(
             max_tokens=request.max_tokens,
             tools=request.tools,
             tool_mode=request.tool_mode,
+            require_approval=request.require_approval,
         )
         return {
             "session_id": session_id,
@@ -323,6 +327,13 @@ async def cancel_chat_turn_endpoint(session_id: str) -> dict[str, Any]:
     """Cancel any active in-flight execution turn for the chat session."""
     cancelled = await chat_turn_service.cancel_turn(session_id)
     return {"session_id": session_id, "cancelled": cancelled}
+
+
+@app.post("/api/chats/{session_id}/approve")
+async def approve_chat_turn_endpoint(session_id: str) -> dict[str, Any]:
+    """Approve any active in-flight execution turn waiting for approval in the chat session."""
+    approved = await chat_turn_service.approve_turn(session_id)
+    return {"session_id": session_id, "approved": approved}
 
 
 @app.post("/api/prompts/lint")
@@ -548,8 +559,11 @@ async def websocket_chat_session_events(
         try:
             while True:
                 msg = await websocket.receive_json()
-                if msg.get("action") == "cancel":
+                action = msg.get("action")
+                if action == "cancel":
                     await chat_turn_service.cancel_turn(session_id)
+                elif action == "approve":
+                    await chat_turn_service.approve_turn(session_id)
         except Exception:
             pass
 

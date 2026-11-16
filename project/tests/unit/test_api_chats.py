@@ -123,10 +123,18 @@ async def test_send_message_and_execution_lifecycle() -> None:
             assert payload["cursor"] == 0
 
             # Wait for asynchronous execution turn to finish
-            await asyncio.sleep(0.4)
+            for _ in range(25):
+                await asyncio.sleep(0.1)
+                session_res = await ac.get(f"/api/chats/{session_id}")
+                if session_res.status_code == 200:
+                    full_session = session_res.json()
+                    if (
+                        len(full_session["messages"]) >= 2
+                        and full_session["messages"][1]["status"] == "complete"
+                    ):
+                        break
 
             # Query session to verify messages and telemetry updated in DB
-            session_res = await ac.get(f"/api/chats/{session_id}")
             assert session_res.status_code == 200
             full_session = session_res.json()
             assert len(full_session["messages"]) == 2
@@ -219,6 +227,70 @@ def test_cancel_chat_turn(client: TestClient) -> None:
         assert cancel_res.json() == {"session_id": session_id, "cancelled": False}
     finally:
         client.delete(f"/api/chats/{session_id}")
+
+
+def test_approve_chat_turn(client: TestClient) -> None:
+    create_res = client.post(
+        "/api/workspaces/root/chats",
+        json={"title": "Approve Turn Test", "provider_id": "fake"},
+    )
+    assert create_res.status_code == 201
+    session_id = create_res.json()["id"]
+    try:
+        # When no active turn is running, approve returns approved=False
+        approve_res = client.post(f"/api/chats/{session_id}/approve")
+        assert approve_res.status_code == 200
+        assert approve_res.json() == {"session_id": session_id, "approved": False}
+    finally:
+        client.delete(f"/api/chats/{session_id}")
+
+
+@pytest.mark.asyncio
+async def test_chat_turn_approval_flow() -> None:
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as ac:
+        create_res = await ac.post(
+            "/api/workspaces/root/chats",
+            json={"title": "Approval Gating Test", "provider_id": "fake"},
+        )
+        assert create_res.status_code == 201
+        session_id = create_res.json()["id"]
+
+        try:
+            # Send message with explicit require_approval=True
+            msg_res = await ac.post(
+                f"/api/chats/{session_id}/messages",
+                json={
+                    "user_prompt": "Refactor codebase with multi-stage verification",
+                    "require_approval": True,
+                },
+            )
+            assert msg_res.status_code == 202
+
+            # Give it a moment to enter WAITING_APPROVAL
+            await asyncio.sleep(0.2)
+
+            # Trigger approval via API endpoint
+            approve_res = await ac.post(f"/api/chats/{session_id}/approve")
+            assert approve_res.status_code == 200
+            assert approve_res.json()["approved"] is True
+
+            # Wait for execution to finish
+            for _ in range(30):
+                await asyncio.sleep(0.1)
+                session_res = await ac.get(f"/api/chats/{session_id}")
+                if session_res.status_code == 200:
+                    messages = session_res.json().get("messages", [])
+                    if len(messages) >= 2 and messages[1]["status"] == "complete":
+                        break
+
+            assert session_res.status_code == 200
+            final_messages = session_res.json()["messages"]
+            assert len(final_messages) >= 2
+            assert final_messages[1]["status"] == "complete"
+        finally:
+            await ac.delete(f"/api/chats/{session_id}")
 
 
 def test_websocket_chat_events_replay_finished(client: TestClient) -> None:

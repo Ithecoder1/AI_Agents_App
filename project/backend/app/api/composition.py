@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import sys
 from collections.abc import Mapping
 from pathlib import Path
 
@@ -35,7 +36,11 @@ _log = logging.getLogger(__name__)
 
 def repo_root() -> Path:
     """``<project>/`` -- this file is ``<project>/backend/app/api/composition.py``."""
-    return Path(__file__).resolve().parents[3]
+    root = Path(__file__).resolve().parents[3]
+    backend = root / "backend"
+    if str(backend) not in sys.path:
+        sys.path.insert(0, str(backend))
+    return root
 
 
 def build_registry(

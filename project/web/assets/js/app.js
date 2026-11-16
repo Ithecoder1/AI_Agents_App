@@ -5,6 +5,28 @@
  */
 
 (() => {
+  // Initialize Mermaid with Vibe Forge Dark Theme
+  if (window.mermaid) {
+    try {
+      window.mermaid.initialize({
+        startOnLoad: false,
+        theme: 'dark',
+        themeVariables: {
+          darkMode: true,
+          background: '#0a0f1e',
+          primaryColor: '#6366f1',
+          primaryTextColor: '#f8fafc',
+          primaryBorderColor: '#818cf8',
+          lineColor: '#38bdf8',
+          secondaryColor: '#1e293b',
+          tertiaryColor: '#0f172a'
+        }
+      });
+    } catch (e) {
+      console.warn('Failed to initialize Mermaid:', e);
+    }
+  }
+
   // --- DOM Elements ---
   const el = {
     // Header & Global Badges
@@ -46,6 +68,7 @@
     lintScoreBadge: document.getElementById('lint-score-badge'),
     lintScoreText: document.getElementById('lint-score-text'),
     tokenEstimateBadge: document.getElementById('token-estimate-badge'),
+    requireApprovalCheck: document.getElementById('require-approval-check'),
     btnExecute: document.getElementById('btn-execute'),
     btnStop: document.getElementById('btn-stop'),
 
@@ -188,7 +211,7 @@
       }
     },
 
-    async createChat(projectId, title = null, providerId = 'autonomous-orchestrator', model = null) {
+    async createChat(projectId, title = null, providerId = 'fake', model = null) {
       const res = await fetch(`/api/workspaces/${encodeURIComponent(projectId)}/chats`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -241,6 +264,14 @@
 
     async cancelChatTurn(sessionId) {
       const res = await fetch(`/api/chats/${encodeURIComponent(sessionId)}/cancel`, {
+        method: 'POST'
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return await res.json();
+    },
+
+    async approveChatTurn(sessionId) {
+      const res = await fetch(`/api/chats/${encodeURIComponent(sessionId)}/approve`, {
         method: 'POST'
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -570,6 +601,27 @@
           </div>
     `;
 
+    const persistedMermaid = meta.mermaid_code || meta.extensions?.mermaid_code;
+    if (persistedMermaid) {
+      html += `
+        <div class="inspector-tray open workflow-inspector-tray approved" id="tray-workflow-${msgId}">
+          <button type="button" class="inspector-tray-toggle" id="tray-workflow-toggle-${msgId}">
+            <span class="workflow-tray-title">
+              <span class="workflow-tray-icon">🔀</span>
+              <strong class="workflow-tray-label">Deterministic Workflow Graph</strong>
+              <span class="workflow-header-badge approved" id="workflow-badge-${msgId}">✓ Workflow Graph</span>
+            </span>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"></polyline></svg>
+          </button>
+          <div class="inspector-tray-body">
+            <div class="workflow-mermaid-svg-wrapper" id="workflow-svg-wrap-${msgId}">
+              <div style="font-size:11px; color:#94a3b8; font-family:var(--font-mono);">Rendering workflow graph...</div>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
     if (executedCommand) {
       html += `
         <div class="inspector-tray" id="tray-cmd-${msgId}">
@@ -711,7 +763,7 @@
         });
       });
 
-      return turnDiv;
+    return turnDiv;
     }
 
     // Assistant Message with rich collapsible inspector
@@ -879,6 +931,18 @@
       });
     });
 
+    // If message has persisted workflow Mermaid diagram, render it
+    const persistedMermaid = runInfo.mermaid_code || meta.mermaid_code || (meta.extensions && meta.extensions.mermaid_code);
+    if (persistedMermaid) {
+      setTimeout(() => {
+        renderOrUpdateMermaidWorkflow(msg.id, {
+          mermaid_code: persistedMermaid,
+          state: status === 'completed' ? 'running' : status,
+          phase: 'APPROVED',
+        });
+      }, 0);
+    }
+
     return turnDiv;
   }
 
@@ -956,7 +1020,7 @@
     try {
       const ws = workspaces.find(w => w.project_id === activeWorkspaceId);
       const title = `New Chat in ${ws?.name || activeWorkspaceId}`;
-      const providerId = el.providerSelect.value || 'autonomous-orchestrator';
+      const providerId = el.providerSelect.value || 'fake';
       const model = el.modelSelect.value || undefined;
 
       const created = await API.createChat(activeWorkspaceId, title, providerId, model);
@@ -1021,11 +1085,13 @@
     el.btnStop.style.display = 'inline-flex';
 
     try {
+      const requireApproval = el.requireApprovalCheck ? el.requireApprovalCheck.checked : true;
       const response = await API.sendChatMessage(activeSessionId, {
         user_prompt: userPrompt,
         system_instructions: systemPrompt,
         provider_id: providerId,
-        model: model
+        model: model,
+        require_approval: requireApproval
       });
 
       // Append user message immediately
@@ -1085,6 +1151,181 @@
 
   const activeStreamEvents = {};
 
+  async function renderOrUpdateMermaidWorkflow(messageId, data) {
+    const msgElement = document.getElementById(`msg-${messageId}`);
+    if (!msgElement) return;
+
+    let tray = document.getElementById(`tray-workflow-${messageId}`);
+    const mermaidCode = data.mermaid_code;
+    const isWaitingApproval = data.state === 'waiting_approval';
+    const isApproved = (data.state === 'running' && data.phase === 'APPROVED') || data.state === 'completed';
+    const isCancelled = data.state === 'cancelled';
+
+    const badgeClass = isWaitingApproval ? 'waiting' : isApproved ? 'approved' : isCancelled ? 'cancelled' : '';
+    const badgeText = isWaitingApproval ? '⏳ Waiting Approval' : isApproved ? '✓ Approved' : isCancelled ? '✕ Cancelled' : '● Executing';
+
+    if (!tray) {
+      tray = document.createElement('div');
+      tray.id = `tray-workflow-${messageId}`;
+      tray.className = `inspector-tray open workflow-inspector-tray ${badgeClass}`;
+
+      tray.innerHTML = `
+        <button type="button" class="inspector-tray-toggle" id="tray-workflow-toggle-${messageId}">
+          <span class="workflow-tray-title">
+            <span class="workflow-tray-icon">🔀</span>
+            <strong class="workflow-tray-label">Deterministic Workflow Graph</strong>
+            <span class="workflow-header-badge ${badgeClass}" id="workflow-badge-${messageId}">
+              ${badgeText}
+            </span>
+          </span>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"></polyline></svg>
+        </button>
+        <div class="inspector-tray-body">
+          <div class="workflow-approval-bar" id="workflow-approval-bar-${messageId}" style="${isWaitingApproval ? 'display:flex;' : 'display:none;'}">
+            <div class="workflow-approval-info">
+              <div class="workflow-approval-prompt">⚠️ Human Review &amp; Approval Required</div>
+              <div class="workflow-approval-subtext">Review the deterministic graph and planned sub-graphs before execution begins.</div>
+            </div>
+            <div class="workflow-approval-actions">
+              <button type="button" class="btn-cancel-workflow" id="btn-cancel-wf-${messageId}">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                <span>Cancel</span>
+              </button>
+              <button type="button" class="btn-approve-workflow" id="btn-approve-wf-${messageId}">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                <span>Approve &amp; Run</span>
+              </button>
+            </div>
+          </div>
+          <div class="workflow-mermaid-svg-wrapper" id="workflow-svg-wrap-${messageId}">
+            <div style="font-size:11px; color:#94a3b8; font-family:var(--font-mono);">Rendering workflow graph...</div>
+          </div>
+        </div>
+      `;
+
+      const fmtView = document.getElementById(`formatted-view-${messageId}`);
+      if (fmtView) {
+        const header = fmtView.querySelector('.turn-metrics-header');
+        if (header && header.nextSibling) {
+          fmtView.insertBefore(tray, header.nextSibling);
+        } else {
+          fmtView.insertBefore(tray, fmtView.firstChild);
+        }
+      } else {
+        let inspector = msgElement.querySelector('.msg-inspector');
+        if (!inspector) {
+          inspector = document.createElement('div');
+          inspector.className = 'msg-inspector';
+          const content = msgElement.querySelector('.msg-text-content');
+          if (content) {
+            msgElement.querySelector('.msg-bubble').insertBefore(inspector, content);
+          } else {
+            msgElement.querySelector('.msg-bubble').appendChild(inspector);
+          }
+        }
+        inspector.insertBefore(tray, inspector.firstChild);
+      }
+
+      const toggleBtn = tray.querySelector('.inspector-tray-toggle');
+      if (toggleBtn) {
+        toggleBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          tray.classList.toggle('open');
+        });
+      }
+
+      const btnApprove = document.getElementById(`btn-approve-wf-${messageId}`);
+      if (btnApprove) {
+        btnApprove.addEventListener('click', async () => {
+          btnApprove.disabled = true;
+          btnApprove.innerHTML = '<span>Approving...</span>';
+          try {
+            if (activeWebSocket && activeWebSocket.readyState === WebSocket.OPEN) {
+              activeWebSocket.send(JSON.stringify({ action: 'approve' }));
+            }
+            await API.approveChatTurn(activeSessionId);
+            const badge = document.getElementById(`workflow-badge-${messageId}`);
+            if (badge) {
+              badge.className = 'workflow-header-badge approved';
+              badge.textContent = '✓ Approved & Executing';
+            }
+            const bar = document.getElementById(`workflow-approval-bar-${messageId}`);
+            if (bar) bar.style.display = 'none';
+          } catch (err) {
+            console.error('Approve turn error:', err);
+            btnApprove.disabled = false;
+            btnApprove.textContent = 'Retry Approve';
+          }
+        });
+      }
+
+      const btnCancel = document.getElementById(`btn-cancel-wf-${messageId}`);
+      if (btnCancel) {
+        btnCancel.addEventListener('click', async () => {
+          btnCancel.disabled = true;
+          try {
+            if (activeWebSocket && activeWebSocket.readyState === WebSocket.OPEN) {
+              activeWebSocket.send(JSON.stringify({ action: 'cancel' }));
+            }
+            await API.cancelChatTurn(activeSessionId);
+            const badge = document.getElementById(`workflow-badge-${messageId}`);
+            if (badge) {
+              badge.className = 'workflow-header-badge cancelled';
+              badge.textContent = '✕ Cancelled';
+            }
+            const bar = document.getElementById(`workflow-approval-bar-${messageId}`);
+            if (bar) bar.style.display = 'none';
+          } catch (err) {
+            console.error('Cancel turn error:', err);
+          }
+        });
+      }
+    }
+
+    const badge = document.getElementById(`workflow-badge-${messageId}`);
+    const bar = document.getElementById(`workflow-approval-bar-${messageId}`);
+    if (isWaitingApproval) {
+      tray.className = 'inspector-tray open workflow-inspector-tray waiting-approval';
+      if (badge) {
+        badge.className = 'workflow-header-badge waiting';
+        badge.textContent = '⏳ Waiting Approval';
+      }
+      if (bar) bar.style.display = 'flex';
+    } else if (isApproved) {
+      tray.className = 'inspector-tray open workflow-inspector-tray approved';
+      if (badge) {
+        badge.className = 'workflow-header-badge approved';
+        badge.textContent = '✓ Approved & Executing';
+      }
+      if (bar) bar.style.display = 'none';
+    } else if (isCancelled) {
+      tray.className = 'inspector-tray open workflow-inspector-tray cancelled';
+      if (badge) {
+        badge.className = 'workflow-header-badge cancelled';
+        badge.textContent = '✕ Cancelled';
+      }
+      if (bar) bar.style.display = 'none';
+    }
+
+    if (mermaidCode) {
+      const wrapper = document.getElementById(`workflow-svg-wrap-${messageId}`);
+      if (wrapper) {
+        if (window.mermaid) {
+          try {
+            const cleanId = 'mermaid_svg_' + messageId.replace(/[^a-zA-Z0-9_-]/g, '_') + '_' + Math.floor(Math.random() * 10000);
+            const { svg } = await window.mermaid.render(cleanId, mermaidCode);
+            wrapper.innerHTML = svg;
+          } catch (mErr) {
+            console.warn('Mermaid render error:', mErr);
+            wrapper.innerHTML = `<pre style="font-size:10.5px; font-family:var(--font-mono); color:#94a3b8; text-align:left; background:rgba(0,0,0,0.3); padding:8px; border-radius:4px; margin:0;">${escapeHtml(mermaidCode)}</pre>`;
+          }
+        } else {
+          wrapper.innerHTML = `<pre style="font-size:10.5px; font-family:var(--font-mono); color:#94a3b8; text-align:left; background:rgba(0,0,0,0.3); padding:8px; border-radius:4px; margin:0;">${escapeHtml(mermaidCode)}</pre>`;
+        }
+      }
+    }
+  }
+
   function handleStreamEvent(event, messageId) {
     activeStreamEvents[messageId] = activeStreamEvents[messageId] || [];
     const rawItem = event.raw_payload || event.data?.raw_payload || event;
@@ -1095,6 +1336,11 @@
 
     const msgElement = document.getElementById(`msg-${messageId}`);
     const contentElement = document.getElementById(`msg-content-${messageId}`);
+
+    // If status event carries workflow or waiting_approval state, update Mermaid card
+    if (data.mermaid_code || data.state === 'waiting_approval' || (data.state === 'running' && data.phase === 'APPROVED') || data.state === 'cancelled') {
+      renderOrUpdateMermaidWorkflow(messageId, data);
+    }
 
     // Update Raw JSON view in real-time
     const rawPre = document.querySelector(`#raw-json-view-${messageId} .raw-json-pre`);

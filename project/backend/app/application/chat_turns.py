@@ -14,7 +14,7 @@ import logging
 import time
 from collections import OrderedDict
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from app.application.buffered_writer import BufferedMessageWriter
@@ -66,6 +66,8 @@ class _ActiveTurn:
     provider: IAgentProvider
     stream: TurnStream
     runner: asyncio.Task[None] | None = None
+    approval_event: asyncio.Event = field(default_factory=asyncio.Event)
+    cancel_event: asyncio.Event = field(default_factory=asyncio.Event)
 
 
 class ChatTurnService:
@@ -126,6 +128,7 @@ class ChatTurnService:
         max_tokens: int | None = None,
         tools: Sequence[str] | None = None,
         tool_mode: str | None = None,
+        require_approval: bool | None = None,
     ) -> StartedTurn:
         """Persist the user message + assistant placeholder and start the run.
 
@@ -150,6 +153,7 @@ class ChatTurnService:
                 max_tokens=max_tokens,
                 tools=tools,
                 tool_mode=tool_mode,
+                require_approval=require_approval,
             )
         except BaseException:
             self._busy.discard(session_id)
@@ -167,6 +171,7 @@ class ChatTurnService:
         max_tokens: int | None,
         tools: Sequence[str] | None = None,
         tool_mode: str | None = None,
+        require_approval: bool | None = None,
     ) -> StartedTurn:
         session = await self._sessions.get_session(session_id)
         provider_id = provider_id or session.provider_id
@@ -257,6 +262,8 @@ class ChatTurnService:
             "full_context_payload": full_context_payload,
             "full_context_payload_text": full_context_payload_text,
         }
+        if require_approval is not None:
+            extra_params["require_approval"] = require_approval
         if is_lightweight:
             extra_params["direct_qa"] = True
             extra_params["mode"] = "plan"
@@ -326,9 +333,22 @@ class ChatTurnService:
         active = self._active.get(session_id)
         if active is None:
             return False
+        active.cancel_event.set()
         await active.provider.cancel(active.task.id)
         if not active.provider.capabilities.supports_cancel and active.runner is not None:
             active.runner.cancel()
+        return True
+
+    async def approve_turn(self, session_id: str) -> bool:
+        """Approve an in-flight turn of *session_id* waiting for user review.
+
+        Returns ``True`` if the provider accepted the approval signal, ``False`` otherwise.
+        """
+        active = self._active.get(session_id)
+        if active is None:
+            return False
+        active.approval_event.set()
+        await active.provider.approve(active.task.id)
         return True
 
     # -- execution --------------------------------------------------------- #
@@ -351,7 +371,18 @@ class ChatTurnService:
         status = STATUS_COMPLETE
         error: dict[str, Any] | None = None
         try:
-            async for event in active.provider.stream_execute(active.task):
+            from company_core.turn_orchestrator import GraphTurnOrchestrator
+
+            orchestrator = GraphTurnOrchestrator(tool_registry=self._tools)
+            require_approval = bool(active.task.params.extra.get("require_approval", False))
+
+            async for event in orchestrator.stream_turn(
+                active.task,
+                active.provider,
+                require_approval=require_approval,
+                approval_event=active.approval_event,
+                cancel_event=active.cancel_event,
+            ):
                 boundary = aggregator.apply(event)
                 if event.type is EventType.DONE:
                     continue  # published after the message is durably finalised

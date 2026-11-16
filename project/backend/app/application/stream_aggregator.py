@@ -134,6 +134,8 @@ class MessageStreamAggregator:
             return False
 
         if kind is EventType.STATUS:
+            if "mermaid_code" in data:
+                self._extensions["mermaid_code"] = str(data["mermaid_code"])
             cmd = data.get("executed_command") or data.get("command")
             if cmd:
                 self._extensions["executed_command"] = str(cmd)

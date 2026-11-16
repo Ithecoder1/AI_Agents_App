@@ -250,6 +250,7 @@ class AutonomousStartupOrchestrator:
         project_id: str = "vibe-app",
         resume_if_possible: bool = True,
         reset_state: bool = False,
+        use_master_graph: bool = True,
     ) -> AsyncIterator[tuple[str, CompanyState]]:
         """Asynchronously stream node execution events and state snapshots.
 
@@ -262,7 +263,7 @@ class AutonomousStartupOrchestrator:
             reset_state=reset_state,
         )
 
-        compiled_graph = self.compile()
+        compiled_graph = self.compile_master_workflow() if use_master_graph else self.compile()
         config: RunnableConfig = {"configurable": {"thread_id": project_id}}
 
         loop = asyncio.get_running_loop()

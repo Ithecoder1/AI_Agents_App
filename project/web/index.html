@@ -11,7 +11,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
   
-  <link rel="stylesheet" href="/assets/css/style.css" />
+  <link rel="stylesheet" href="/assets/css/style.css?v=2" />
 </head>
 <body>
 
@@ -130,10 +130,9 @@
           <div class="selector-pair">
             <label for="provider-select" class="selector-label">Provider:</label>
             <select class="custom-select-sm" id="provider-select" aria-label="Agent Provider">
-              <option value="autonomous-orchestrator" selected>Autonomous Startup (LangGraph)</option>
-              <option value="antigravity-headless">Antigravity (headless)</option>
-              <option value="fake">Fake (offline demo)</option>
+              <option value="fake" selected>Fake (offline demo)</option>
               <option value="gemini-default">Google Gemini (thinking)</option>
+              <option value="antigravity-headless">Antigravity (headless)</option>
               <option value="openrouter-default" disabled>OpenRouter (disabled)</option>
               <option value="anthropic-default" disabled>Anthropic Claude (disabled)</option>
             </select>
@@ -236,6 +235,10 @@
                 <span class="linter-sep">·</span>
                 <span id="token-estimate-badge">~18 tokens</span>
               </div>
+              <label class="approval-toggle-label" title="Pause for human approval after graph planning before running heavy tasks">
+                <input type="checkbox" id="require-approval-check" checked />
+                <span>Require Approval</span>
+              </label>
             </div>
 
             <div class="composer-actions-right">
@@ -361,6 +364,7 @@
     </div>
   </div>
 
-  <script src="/assets/js/app.js"></script>
+  <script src="/assets/js/mermaid.min.js?v=2"></script>
+  <script src="/assets/js/app.js?v=2"></script>
 </body>
 </html>

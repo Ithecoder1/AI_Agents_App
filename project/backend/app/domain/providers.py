@@ -29,6 +29,7 @@ def _mask(options: Mapping[str, Any]) -> dict[str, Any]:
 class ProviderCapabilities:
     streaming: bool = True
     supports_cancel: bool = False
+    supports_approval: bool = False
     # True only if re-running the same task is harmless. Agents that edit files are NOT.
     idempotent: bool = False
     can_modify_workspace: bool = False

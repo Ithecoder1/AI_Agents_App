@@ -47,13 +47,13 @@
   },
   "execution_logs": [
     {
-      "timestamp": "2026-11-15T12:23:31.297001+00:00",
+      "timestamp": "2026-11-15T21:36:03.698353+00:00",
       "agent": "system",
       "phase": "INITIALIZATION",
       "message": "Initialized graph session 'sess-master-e2e' for project 'master-e2e' with requirement: 'solve: 1+1 arithmetic evaluator'"
     },
     {
-      "timestamp": "2026-11-15T12:23:31.300001+00:00",
+      "timestamp": "2026-11-15T21:36:03.701346+00:00",
       "agent": "ceo_triage",
       "phase": "ARCHITECT",
       "message": "Triage: Classified request intent as 'FULL_PIPELINE' (Lightweight: False).",
@@ -64,7 +64,7 @@
       }
     },
     {
-      "timestamp": "2026-11-15T12:23:31.300992+00:00",
+      "timestamp": "2026-11-15T21:36:03.703300+00:00",
       "agent": "ceo_planner",
       "phase": "ARCHITECT",
       "message": "Planner: Synthesized structured execution plan with 3 steps.",
@@ -90,7 +90,7 @@
       }
     },
     {
-      "timestamp": "2026-11-15T12:23:31.302977+00:00",
+      "timestamp": "2026-11-15T21:36:03.705308+00:00",
       "agent": "subgraph_router",
       "phase": "ARCHITECT",
       "message": "Router: Routing to appropriate sub-graph or execution target.",
@@ -100,7 +100,7 @@
       }
     },
     {
-      "timestamp": "2026-11-15T12:23:31.307978+00:00",
+      "timestamp": "2026-11-15T21:36:03.710377+00:00",
       "agent": "architect",
       "phase": "ARCHITECT",
       "message": "Architect: Parsed requirements for domain 'arithmetic_evaluator'.",
@@ -115,7 +115,7 @@
       }
     },
     {
-      "timestamp": "2026-11-15T12:23:31.309992+00:00",
+      "timestamp": "2026-11-15T21:36:03.712380+00:00",
       "agent": "architect",
       "phase": "ARCHITECT",
       "message": "Architect: Generated architecture specification and module layout.",
@@ -124,7 +124,7 @@
       }
     },
     {
-      "timestamp": "2026-11-15T12:23:31.310990+00:00",
+      "timestamp": "2026-11-15T21:36:03.714379+00:00",
       "agent": "architect",
       "phase": "ARCHITECT",
       "message": "Architect: Validated architecture blueprint schemas and contracts.",
@@ -133,7 +133,7 @@
       }
     },
     {
-      "timestamp": "2026-11-15T12:23:31.331682+00:00",
+      "timestamp": "2026-11-15T21:36:03.737707+00:00",
       "agent": "coder",
       "phase": "CODER",
       "message": "Coder: Implemented core source files and test fixtures.",
@@ -148,7 +148,7 @@
       }
     },
     {
-      "timestamp": "2026-11-15T12:23:31.334725+00:00",
+      "timestamp": "2026-11-15T21:36:03.742707+00:00",
       "agent": "devops",
       "phase": "DEVOPS",
       "message": "DevOps: Configured requirements.txt, pytest.ini, and test execution harness.",
@@ -160,13 +160,13 @@
       }
     },
     {
-      "timestamp": "2026-11-15T12:23:31.334725+00:00",
+      "timestamp": "2026-11-15T21:36:03.742707+00:00",
       "agent": "devops",
       "phase": "DEVOPS",
       "message": "DevOps: Configured requirements.txt and pytest execution harness."
     },
     {
-      "timestamp": "2026-11-15T12:23:34.336018+00:00",
+      "timestamp": "2026-11-15T21:36:05.469297+00:00",
       "agent": "qa",
       "phase": "QA",
       "message": "QA: All automated tests PASSED successfully.",

@@ -224,6 +224,10 @@ class BaseAgentRunner(ABC):
         """Default: nothing to cancel. Override together with ``supports_cancel=True``."""
         return None
 
+    async def approve(self, task_id: str) -> bool:
+        """Default: does not support approval. Override with ``supports_approval=True``."""
+        return False
+
     async def aclose(self) -> None:
         """Release clients/processes. Default: nothing to release."""
         return None

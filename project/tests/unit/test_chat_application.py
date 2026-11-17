@@ -167,6 +167,7 @@ def test_message_stream_aggregator_events_and_boundaries() -> None:
     assert meta.plan is not None
     assert meta.plan.summary == "Refactor"
     assert len(meta.plan.steps) == 1
+    assert meta.plan.steps[0].status == "done"
     assert len(meta.tool_calls) == 1
     assert meta.tool_calls[0].status == "ok"
     assert meta.tool_calls[0].result == "all passed"

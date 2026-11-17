@@ -500,6 +500,11 @@ async def test_turn_orchestrator_dynamic_fast_path_and_mermaid() -> None:
     tokens = "".join(e.data["text"] for e in events if e.type is EventType.TOKEN)
     assert "Fast Answer" in tokens
 
+    plan_events = [e for e in events if e.type is EventType.PLAN]
+    assert len(plan_events) >= 2
+    assert plan_events[0].data["steps"][0]["status"] == "in_progress"
+    assert all(s["status"] == "done" for s in plan_events[-1].data["steps"])
+
     # Distinct intent-specific Mermaid diagrams generated cleanly
     assert "ArchitectSub" in generate_mermaid_workflow(
         "Design a modular system architecture blueprint",

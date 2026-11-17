@@ -307,6 +307,81 @@ class GraphTurnOrchestrator:
             steps.append({"title": f"1. Execute via {provider_name}", "status": "in_progress"})
         return steps
 
+    @staticmethod
+    def _finalize_plan_steps(
+        plan_steps: list[dict[str, Any]],
+        *,
+        completed: bool,
+    ) -> list[dict[str, Any]]:
+        """Return a copy of plan_steps with final done/failed statuses."""
+        finalized: list[dict[str, Any]] = []
+        for step in plan_steps:
+            updated = dict(step)
+            cur_status = str(updated.get("status", "pending"))
+            if completed:
+                if cur_status in ("pending", "in_progress"):
+                    updated["status"] = "done"
+            elif cur_status == "in_progress":
+                updated["status"] = "failed"
+            finalized.append(updated)
+        return finalized
+
+    async def _stream_provider_with_plan_completion(
+        self,
+        *,
+        task: ExecutionTask,
+        provider: IAgentProvider,
+        active_tools: tuple[ToolDescriptor, ...],
+        plan_summary: str,
+        plan_steps: list[dict[str, Any]],
+    ) -> AsyncIterator[StreamEvent]:
+        """Forward provider events and emit finalized PLAN status before DONE."""
+        task_id = task.id
+        attempt = task.attempt or 1
+        emitted_final_plan = False
+        had_error = False
+
+        async for ev in provider.stream_execute(task, active_tools=active_tools):
+            if ev.type is EventType.ERROR:
+                had_error = True
+                if not emitted_final_plan:
+                    emitted_final_plan = True
+                    yield StreamEvent.create(
+                        task_id,
+                        attempt,
+                        EventType.PLAN,
+                        summary=plan_summary,
+                        steps=self._finalize_plan_steps(plan_steps, completed=False),
+                    )
+                yield ev
+                continue
+
+            if ev.type is EventType.DONE:
+                finish_reason = str(ev.data.get("finish_reason") or "")
+                ok = not had_error and finish_reason not in ("cancelled", "error")
+                if not emitted_final_plan:
+                    emitted_final_plan = True
+                    yield StreamEvent.create(
+                        task_id,
+                        attempt,
+                        EventType.PLAN,
+                        summary=plan_summary,
+                        steps=self._finalize_plan_steps(plan_steps, completed=ok),
+                    )
+                yield ev
+                continue
+
+            yield ev
+
+        if not emitted_final_plan:
+            yield StreamEvent.create(
+                task_id,
+                attempt,
+                EventType.PLAN,
+                summary=plan_summary,
+                steps=self._finalize_plan_steps(plan_steps, completed=not had_error),
+            )
+
     async def stream_turn(
         self,
         task: ExecutionTask,
@@ -357,12 +432,13 @@ class GraphTurnOrchestrator:
         )
 
         # 4. Plan event driven by YAML profile template
+        plan_summary = f"Dynamic Orchestration ({profile.intent} · {provider_name})"
         plan_steps = self._build_plan_steps(profile, provider_name)
         yield StreamEvent.create(
             task_id,
             attempt,
             EventType.PLAN,
-            summary=f"Dynamic Orchestration ({profile.intent} · {provider_name})",
+            summary=plan_summary,
             steps=plan_steps,
         )
 
@@ -456,14 +532,26 @@ class GraphTurnOrchestrator:
         # 6. Dynamic Dispatching by Resolved Intent
         if profile.intent == INTENT_DIRECT_QA:
             # Fast-path zero-tool execution directly on provider
-            async for ev in provider.stream_execute(task, active_tools=()):
+            async for ev in self._stream_provider_with_plan_completion(
+                task=task,
+                provider=provider,
+                active_tools=(),
+                plan_summary=plan_summary,
+                plan_steps=plan_steps,
+            ):
                 yield ev
             return
 
         if profile.intent == INTENT_FOCUSED_TOOL_TASK:
             # Scoped JIT tool provisioning via code_analysis skill without heavyweight sub-graphs
             scoped_tools = self._provision_focused_tools(profile, user_prompt, active_tools)
-            async for ev in provider.stream_execute(task, active_tools=scoped_tools):
+            async for ev in self._stream_provider_with_plan_completion(
+                task=task,
+                provider=provider,
+                active_tools=scoped_tools,
+                plan_summary=plan_summary,
+                plan_steps=plan_steps,
+            ):
                 yield ev
             return
 
@@ -485,7 +573,7 @@ class GraphTurnOrchestrator:
             project_root_resolver=lambda _: target_workspace,
         )
 
-        mapper = StartupNodeEventMapper()
+        mapper = StartupNodeEventMapper(plan_steps=plan_steps, summary=plan_summary)
         last_state: CompanyState | None = None
 
         async for node_name, state_snapshot in orchestrator.astream_nodes(
@@ -503,6 +591,15 @@ class GraphTurnOrchestrator:
 
         # Final Delivery Summary
         is_completed = last_state is not None and last_state.get("current_phase") == PHASE_COMPLETED
+
+        final_plan_steps = self._finalize_plan_steps(mapper.plan_steps, completed=is_completed)
+        yield StreamEvent.create(
+            task_id,
+            attempt,
+            EventType.PLAN,
+            summary=plan_summary,
+            steps=final_plan_steps,
+        )
         status_banner = "**COMPLETED SUCCESSFULLY**" if is_completed else "**EXECUTION PAUSED**"
 
         total_files = len(last_state.get("code_files") or {}) if last_state else 0

@@ -146,7 +146,29 @@ class MessageStreamAggregator:
 
         if kind is EventType.DONE:
             self.finish_reason = str(data.get("finish_reason") or "") or None
+            if self._plan is not None:
+                if self.finish_reason not in ("cancelled", "error"):
+                    updated_steps = tuple(
+                        replace(step, status="done")
+                        if step.status in ("pending", "in_progress")
+                        else step
+                        for step in self._plan.steps
+                    )
+                    self._plan = replace(self._plan, steps=updated_steps)
+                elif self.finish_reason == "error":
+                    updated_steps = tuple(
+                        replace(step, status="failed") if step.status == "in_progress" else step
+                        for step in self._plan.steps
+                    )
+                    self._plan = replace(self._plan, steps=updated_steps)
             return True
+
+        if kind is EventType.ERROR and self._plan is not None:
+            updated_steps = tuple(
+                replace(step, status="failed") if step.status == "in_progress" else step
+                for step in self._plan.steps
+            )
+            self._plan = replace(self._plan, steps=updated_steps)
 
         return kind is EventType.ERROR  # other unknown: nothing to persist
 

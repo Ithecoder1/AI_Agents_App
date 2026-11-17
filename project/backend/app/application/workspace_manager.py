@@ -284,8 +284,13 @@ class WorkspaceManager:
         query: str | None = None,
     ) -> str:
         """Inject workspace context, manifest contract, and context files into system prompt."""
-        if query is not None and is_lightweight_query(query):
-            return LIGHTWEIGHT_SYSTEM_INSTRUCTIONS
+        if query is not None and (
+            is_lightweight_query(query)
+            or not should_load_workspace_context(query, workspace.manifest.context_files)
+        ):
+            return (
+                base_instructions.strip() if base_instructions else LIGHTWEIGHT_SYSTEM_INSTRUCTIONS
+            )
 
         manifest = workspace.manifest
         lines: list[str] = []

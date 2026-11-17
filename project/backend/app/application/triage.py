@@ -11,11 +11,7 @@ __all__ = [
     "should_load_workspace_context",
 ]
 
-LIGHTWEIGHT_SYSTEM_INSTRUCTIONS = (
-    "You are a helpful software assistant for this workspace. "
-    "Respond concisely and directly (1-2 sentences). "
-    "Do NOT generate architectural blueprints, plans, or diffs unless explicitly asked."
-)
+LIGHTWEIGHT_SYSTEM_INSTRUCTIONS = ""
 
 _COMMON_GREETINGS = frozenset(
     {
@@ -56,6 +52,11 @@ _COMMON_GREETINGS = frozenset(
 )
 
 _MATH_PATTERN = re.compile(r"^[\d\s+\-*/%^=?.()]+$")
+
+_MATH_QUERY_PREFIX_REGEX = re.compile(
+    r"^(?:solve|calculate|compute|eval)\s*:?\s*(.+)$",
+    re.IGNORECASE,
+)
 
 _GREETING_REGEX = re.compile(
     r"^(hi|hello|hey|hiya|howdy|sup|yo|greetings|good\s+(morning|afternoon|evening)|shalom)"
@@ -100,9 +101,15 @@ def is_lightweight_query(text: str) -> bool:
     if lower in _COMMON_GREETINGS or bool(_GREETING_REGEX.match(cleaned)):
         return True
 
-    # 2. Match simple math expressions (e.g. '1+1', '1+1?', '2 * 3')
+    # 2. Match simple math expressions (e.g. '1+1', '1+1?', '2 * 3', 'solve 1+1')
     if _MATH_PATTERN.match(cleaned) and any(c.isdigit() for c in cleaned):
         return True
+
+    math_prefixed = _MATH_QUERY_PREFIX_REGEX.match(cleaned)
+    if math_prefixed:
+        expr = math_prefixed.group(1).strip()
+        if _MATH_PATTERN.match(expr) and any(c.isdigit() for c in expr):
+            return True
 
     # 3. Short generic query (< 15 characters) with no code/file references
     return bool(len(cleaned) < 15 and not _CODE_FILE_INDICATORS.search(cleaned))

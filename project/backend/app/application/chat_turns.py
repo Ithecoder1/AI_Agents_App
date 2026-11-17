@@ -205,7 +205,9 @@ class ChatTurnService:
         ]
 
         if is_lightweight:
-            enriched_instructions = LIGHTWEIGHT_SYSTEM_INSTRUCTIONS
+            enriched_instructions = (
+                system_instructions or ""
+            ).strip() or LIGHTWEIGHT_SYSTEM_INSTRUCTIONS
             context_items: tuple[ContextSnapshot, ...] = ()
         else:
             enriched_instructions = self._workspaces.enrich_system_instructions(

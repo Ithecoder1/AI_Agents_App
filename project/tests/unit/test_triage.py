@@ -32,7 +32,11 @@ def test_is_lightweight_query_math_and_short() -> None:
     assert is_lightweight_query("1+1")
     assert is_lightweight_query("1+1?")
     assert is_lightweight_query("1 + 1")
+    assert is_lightweight_query("solve 1+1")
+    assert is_lightweight_query("solve: 2 + 2")
     assert is_lightweight_query("2 * 3")
+    assert not is_lightweight_query("solve: 1+1 arithmetic evaluator")
+    assert LIGHTWEIGHT_SYSTEM_INSTRUCTIONS == ""
     assert is_lightweight_query("ping")
     assert is_lightweight_query("pong")
     assert is_lightweight_query("ok")

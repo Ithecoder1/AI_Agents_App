@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+from typing import Any
+
 from app.domain.enums import ArtifactKind, EventType
 from app.domain.models import Artifact, StreamEvent
 
@@ -11,26 +14,57 @@ from company_core.state import CompanyState
 class StartupNodeEventMapper:
     """Maps LangGraph node transitions to user-facing domain StreamEvents."""
 
-    def __init__(self) -> None:
-        self.plan_steps: list[dict[str, str]] = [
-            {
-                "title": "1. Architecture Blueprint Synthesis (Software Architect)",
-                "status": "in_progress",
-            },
-            {
-                "title": "2. Source Code & Test Implementation (Software Engineer)",
-                "status": "pending",
-            },
-            {
-                "title": "3. DevOps & Environment Preparation (DevOps Engineer)",
-                "status": "pending",
-            },
-            {
-                "title": "4. Quality Assurance & Automated Pytest (QA Engineer)",
-                "status": "pending",
-            },
-            {"title": "5. Final Delivery & Verification", "status": "pending"},
-        ]
+    def __init__(
+        self,
+        plan_steps: Sequence[dict[str, Any]] | None = None,
+        summary: str = "Autonomous Startup Multi-Agent Lifecycle",
+    ) -> None:
+        self.summary = summary
+        if plan_steps:
+            self.plan_steps: list[dict[str, str]] = [
+                {
+                    "title": str(step.get("title", f"Step {idx + 1}")),
+                    "status": str(step.get("status", "pending")),
+                }
+                for idx, step in enumerate(plan_steps)
+            ]
+        else:
+            self.plan_steps = [
+                {
+                    "title": "1. Architecture Blueprint Synthesis (Software Architect)",
+                    "status": "in_progress",
+                },
+                {
+                    "title": "2. Source Code & Test Implementation (Software Engineer)",
+                    "status": "pending",
+                },
+                {
+                    "title": "3. DevOps & Environment Preparation (DevOps Engineer)",
+                    "status": "pending",
+                },
+                {
+                    "title": "4. Quality Assurance & Automated Pytest (QA Engineer)",
+                    "status": "pending",
+                },
+                {"title": "5. Final Delivery & Verification", "status": "pending"},
+            ]
+
+    def _advance_plan_step(self, done_index: int) -> None:
+        """Mark steps 0..done_index as done and set the next step in bounds to in_progress."""
+        total = len(self.plan_steps)
+        if total == 0:
+            return
+        clamped_done = min(done_index, total - 1)
+        for idx in range(clamped_done + 1):
+            self.plan_steps[idx]["status"] = "done"
+        next_idx = clamped_done + 1
+        if next_idx < total and self.plan_steps[next_idx]["status"] == "pending":
+            self.plan_steps[next_idx]["status"] = "in_progress"
+
+    def _mark_all_steps_done(self) -> None:
+        """Mark every step in the active plan as done."""
+        for step in self.plan_steps:
+            step["status"] = "done"
 
     def map_node(
         self,
@@ -72,13 +106,13 @@ class StartupNodeEventMapper:
         elif node_name == "planner_node":
             plan = state_snapshot.get("plan") or []
             if plan:
-                formatted_steps = [
+                self.plan_steps = [
                     {
                         "title": (
                             f"{s.get('step', i + 1)}. "
                             f"{s.get('description', s.get('action', 'Step'))}"
                         ),
-                        "status": "pending",
+                        "status": "in_progress" if i == 0 else "pending",
                     }
                     for i, s in enumerate(plan)
                 ]
@@ -87,8 +121,8 @@ class StartupNodeEventMapper:
                         task_id,
                         attempt,
                         EventType.PLAN,
-                        summary="Deterministic Orchestration Plan",
-                        steps=formatted_steps,
+                        summary=self.summary,
+                        steps=[dict(s) for s in self.plan_steps],
                     )
                 )
             events.append(
@@ -115,15 +149,14 @@ class StartupNodeEventMapper:
             )
 
         elif node_name in ("architect", "architect_subgraph", "schema_validator_node"):
-            self.plan_steps[0]["status"] = "done"
-            self.plan_steps[1]["status"] = "in_progress"
+            self._advance_plan_step(0)
             events.append(
                 StreamEvent.create(
                     task_id,
                     attempt,
                     EventType.PLAN,
-                    summary="Autonomous Startup Multi-Agent Lifecycle",
-                    steps=self.plan_steps,
+                    summary=self.summary,
+                    steps=[dict(s) for s in self.plan_steps],
                 )
             )
             spec = state_snapshot.get("architecture_spec") or "No spec generated"
@@ -160,15 +193,14 @@ class StartupNodeEventMapper:
             )
 
         elif node_name in ("coder", "coder_node", "coder_qa_subgraph"):
-            self.plan_steps[1]["status"] = "done"
-            self.plan_steps[2]["status"] = "in_progress"
+            self._advance_plan_step(1 if len(self.plan_steps) >= 3 else 0)
             events.append(
                 StreamEvent.create(
                     task_id,
                     attempt,
                     EventType.PLAN,
-                    summary="Autonomous Startup Multi-Agent Lifecycle",
-                    steps=self.plan_steps,
+                    summary=self.summary,
+                    steps=[dict(s) for s in self.plan_steps],
                 )
             )
             code_files = state_snapshot.get("code_files") or {}
@@ -213,15 +245,15 @@ class StartupNodeEventMapper:
             )
 
         elif node_name in ("devops", "devops_test_node"):
-            self.plan_steps[2]["status"] = "done"
-            self.plan_steps[3]["status"] = "in_progress"
+            if len(self.plan_steps) >= 4:
+                self._advance_plan_step(2)
             events.append(
                 StreamEvent.create(
                     task_id,
                     attempt,
                     EventType.PLAN,
-                    summary="Autonomous Startup Multi-Agent Lifecycle",
-                    steps=self.plan_steps,
+                    summary=self.summary,
+                    steps=[dict(s) for s in self.plan_steps],
                 )
             )
             events.append(
@@ -246,8 +278,7 @@ class StartupNodeEventMapper:
             test_results = state_snapshot.get("test_results") or ""
             passed = "PASSED" in test_results
             if passed:
-                self.plan_steps[3]["status"] = "done"
-                self.plan_steps[4]["status"] = "done"
+                self._mark_all_steps_done()
                 qa_text = "Quality Assurance: Automated pytest suite PASSED all assertions!"
             else:
                 qa_text = f"Quality Assurance: Tests failed: {test_results[:50]}..."
@@ -258,8 +289,8 @@ class StartupNodeEventMapper:
                     task_id,
                     attempt,
                     EventType.PLAN,
-                    summary="Autonomous Startup Multi-Agent Lifecycle",
-                    steps=self.plan_steps,
+                    summary=self.summary,
+                    steps=[dict(s) for s in self.plan_steps],
                 )
             )
             events.append(
@@ -273,6 +304,16 @@ class StartupNodeEventMapper:
             )
 
         elif node_name == "executor_node":
+            self._mark_all_steps_done()
+            events.append(
+                StreamEvent.create(
+                    task_id,
+                    attempt,
+                    EventType.PLAN,
+                    summary=self.summary,
+                    steps=[dict(s) for s in self.plan_steps],
+                )
+            )
             messages = state_snapshot.get("messages") or []
             last_text = messages[-1].get("content", "") if messages else ""
             events.append(

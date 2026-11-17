@@ -333,10 +333,21 @@
       .replace(/'/g, '&#039;');
   }
 
+  function applyInlineMarkdown(escapedLine) {
+    // Inline code first so asterisks inside code spans are untouched
+    let out = escapedLine.replace(/`([^`]+)`/g, '<code>$1</code>');
+    // Bold
+    out = out.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+    return out;
+  }
+
   function formatMarkdown(text) {
     if (!text) return '';
-    // Code blocks with syntax / copy
-    text = text.replace(/```([a-zA-Z0-9_\-\.]*)\n([\s\S]*?)```/g, (match, lang, code) => {
+
+    const codePlaceholders = [];
+    // Extract fenced code blocks (supports closed fences cleanly)
+    let working = text.replace(/```([a-zA-Z0-9_\-\.]*)\n([\s\S]*?)```/g, (match, lang, code) => {
+      let blockHtml;
       if (lang === 'diff') {
         const lines = code.split('\n').map(l => {
           let cls = '';
@@ -345,18 +356,107 @@
           else if (l.startsWith('@@') || l.startsWith('---') || l.startsWith('+++')) cls = 'header';
           return `<div class="diff-line ${cls}">${escapeHtml(l)}</div>`;
         }).join('');
-        return `<div class="diff-viewer">${lines}</div>`;
+        blockHtml = `<div class="diff-viewer">${lines}</div>`;
+      } else {
+        blockHtml = `<pre><code class="language-${escapeHtml(lang)}">${escapeHtml(code)}</code></pre>`;
       }
-      return `<pre><code class="language-${lang}">${escapeHtml(code)}</code></pre>`;
+      const token = `\x00CODEBLOCK_${codePlaceholders.length}\x00`;
+      codePlaceholders.push(blockHtml);
+      return `\n${token}\n`;
     });
 
-    // Inline code
-    text = text.replace(/`([^`]+)`/g, '<code>$1</code>');
-    // Bold
-    text = text.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
-    // Line breaks
-    text = text.replace(/\n\n/g, '<br/><br/>').replace(/\n/g, '<br/>');
-    return text;
+    const lines = working.split(/\r?\n/);
+    const output = [];
+    let i = 0;
+
+    while (i < lines.length) {
+      const rawLine = lines[i];
+      const trimmed = rawLine.trim();
+
+      // Code block placeholder line
+      const cbMatch = trimmed.match(/^\x00CODEBLOCK_(\d+)\x00$/);
+      if (cbMatch) {
+        output.push(codePlaceholders[Number(cbMatch[1])]);
+        i++;
+        continue;
+      }
+
+      // Markdown Table (at least 2 consecutive pipe-delimited rows)
+      if (trimmed.startsWith('|') && trimmed.endsWith('|') && i + 1 < lines.length && lines[i + 1].trim().startsWith('|')) {
+        const tableLines = [];
+        while (i < lines.length && lines[i].trim().startsWith('|') && lines[i].trim().endsWith('|')) {
+          tableLines.push(lines[i].trim());
+          i++;
+        }
+        const parseRow = (rowStr) => rowStr.slice(1, -1).split('|').map(cell => cell.trim());
+        const isSeparator = (cells) => cells.every(c => /^:?-{2,}:?$/.test(c));
+
+        const headerCells = parseRow(tableLines[0]);
+        const hasSep = tableLines.length > 1 && isSeparator(parseRow(tableLines[1]));
+        const bodyRows = tableLines.slice(hasSep ? 2 : 1);
+
+        let tableHtml = '<table class="md-table">';
+        if (hasSep) {
+          tableHtml += '<thead><tr>' + headerCells.map(c => `<th>${applyInlineMarkdown(escapeHtml(c))}</th>`).join('') + '</tr></thead>';
+        } else {
+          bodyRows.unshift(tableLines[0]);
+        }
+        if (bodyRows.length > 0) {
+          tableHtml += '<tbody>' + bodyRows.map(r => {
+            const cells = parseRow(r);
+            return '<tr>' + cells.map(c => `<td>${applyInlineMarkdown(escapeHtml(c))}</td>`).join('') + '</tr>';
+          }).join('') + '</tbody>';
+        }
+        tableHtml += '</table>';
+        output.push(tableHtml);
+        continue;
+      }
+
+      // Horizontal Rule
+      if (/^---+$/.test(trimmed)) {
+        output.push('<hr class="md-hr"/>');
+        i++;
+        continue;
+      }
+
+      // Headings (# to ####)
+      const hMatch = trimmed.match(/^(#{1,4})\s+(.*)$/);
+      if (hMatch) {
+        const level = hMatch[1].length;
+        output.push(`<h${level} class="md-heading md-h${level}">${applyInlineMarkdown(escapeHtml(hMatch[2]))}</h${level}>`);
+        i++;
+        continue;
+      }
+
+      // Blockquote
+      if (trimmed.startsWith('> ')) {
+        output.push(`<blockquote class="md-quote">${applyInlineMarkdown(escapeHtml(trimmed.slice(2)))}</blockquote>`);
+        i++;
+        continue;
+      }
+
+      // Bullet list item
+      if (/^[-*]\s+/.test(trimmed)) {
+        output.push(`<div class="md-list-item"><span class="md-bullet">•</span><span>${applyInlineMarkdown(escapeHtml(trimmed.replace(/^[-*]\s+/, '')))}</span></div>`);
+        i++;
+        continue;
+      }
+
+      // Blank line -> visual break if previous element isn't already a block spacer
+      if (trimmed === '') {
+        if (output.length > 0 && !output[output.length - 1].endsWith('<div class="md-spacer"></div>')) {
+          output.push('<div class="md-spacer"></div>');
+        }
+        i++;
+        continue;
+      }
+
+      // Regular line
+      output.push(`<div class="md-line">${applyInlineMarkdown(escapeHtml(rawLine))}</div>`);
+      i++;
+    }
+
+    return output.join('');
   }
 
   // --- UI Renderers ---
@@ -513,6 +613,19 @@
     });
 
     scrollToBottom();
+  }
+
+  function buildPlanStepsHtml(steps) {
+    const iconFor = (st) => st === 'done' ? '✓' : st === 'in_progress' ? '●' : st === 'failed' ? '✕' : '○';
+    return (steps || []).map(s => {
+      const st = s.status || 'pending';
+      return `
+        <div class="plan-step-row ${escapeHtml(st)}">
+          <span class="step-status-icon ${escapeHtml(st)}">${iconFor(st)}</span>
+          <span class="plan-step-title">${escapeHtml(s.title || '')}</span>
+        </div>
+      `;
+    }).join('');
   }
 
   function buildTurnMetricsHtml(meta, msgId, extraData = {}) {
@@ -709,6 +822,101 @@
       `;
     }
 
+    const contextItems = extraData.contextItems || [];
+    const thoughts = extraData.thoughts || [];
+    const plan = extraData.plan || null;
+    const toolCalls = extraData.toolCalls || [];
+    const logs = extraData.logs || [];
+
+    // Context items accordion
+    if (contextItems.length > 0) {
+      const itemsList = contextItems.map(c => `
+        <div class="context-file-card">
+          <span>📄 ${escapeHtml(c.label || c.path || c.kind)}</span>
+          <span style="color:#64748b;">~${Math.round((c.content || '').length / 4)} tokens</span>
+        </div>
+      `).join('');
+
+      html += `
+        <div class="inspector-tray" id="tray-context-${msgId}">
+          <button type="button" class="inspector-tray-toggle">
+            <span>📁 Injected Project Context (${contextItems.length} files)</span>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"></polyline></svg>
+          </button>
+          <div class="inspector-tray-body">
+            <div class="context-items-list">${itemsList}</div>
+          </div>
+        </div>
+      `;
+    }
+
+    // Execution plan accordion
+    if (plan && plan.steps && plan.steps.length > 0) {
+      html += `
+        <div class="inspector-tray open" id="tray-plan-${msgId}">
+          <button type="button" class="inspector-tray-toggle">
+            <span class="plan-tray-summary">📋 Execution Plan: ${escapeHtml(plan.summary || 'Step-by-step')}</span>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"></polyline></svg>
+          </button>
+          <div class="inspector-tray-body">
+            <div class="plan-container">${buildPlanStepsHtml(plan.steps)}</div>
+          </div>
+        </div>
+      `;
+    }
+
+    // Thoughts / Reasoning accordion
+    if (thoughts.length > 0) {
+      const thoughtSteps = thoughts.map(t => `
+        <div class="thought-step-card">
+          <strong>🧠 Thought:</strong>
+          <div>${escapeHtml(t.text)}</div>
+        </div>
+      `).join('');
+
+      html += `
+        <div class="inspector-tray" id="tray-thoughts-${msgId}">
+          <button type="button" class="inspector-tray-toggle">
+            <span>🧠 Reasoning &amp; Internal Thoughts (${thoughts.length} step${thoughts.length === 1 ? '' : 's'})</span>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"></polyline></svg>
+          </button>
+          <div class="inspector-tray-body">
+            ${thoughtSteps}
+          </div>
+        </div>
+      `;
+    }
+
+    // Tool calls & logs accordion
+    if (toolCalls.length > 0 || logs.length > 0) {
+      const toolRows = toolCalls.map(tc => `
+        <div style="margin-bottom:6px; font-family:var(--font-mono);">
+          <strong style="color:var(--accent-cyan);">🔧 ${escapeHtml(tc.name)}</strong>
+          <pre style="background:rgba(0,0,0,0.4); padding:6px; border-radius:4px; font-size:10.5px; margin-top:2px;">${escapeHtml(JSON.stringify(tc.args, null, 2))}</pre>
+          ${tc.result ? `<div style="color:#10b981; font-size:10.5px; margin-top:2px;">Result: ${escapeHtml(typeof tc.result === 'string' ? tc.result : JSON.stringify(tc.result))}</div>` : ''}
+        </div>
+      `).join('');
+
+      const logRows = logs.map(l => `
+        <div style="font-family:var(--font-mono); font-size:10.5px; color:#94a3b8;">
+          [${escapeHtml(l.stream)}] ${escapeHtml(l.text)}
+        </div>
+      `).join('');
+
+      html += `
+        <div class="inspector-tray" id="tray-tools-${msgId}">
+          <button type="button" class="inspector-tray-toggle">
+            <span>🔧 Tool Executions &amp; Runtime Logs (${toolCalls.length + logs.length} events)</span>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"></polyline></svg>
+          </button>
+          <div class="inspector-tray-body">
+            ${toolRows}
+            ${logRows}
+          </div>
+        </div>
+      `;
+    }
+
     html += `
         </div>
 
@@ -768,7 +976,8 @@
 
     // Assistant Message with rich collapsible inspector
     const meta = msg.metadata || {};
-    const status = msg.status || meta.extensions?.status || 'completed';
+    const rawStatus = msg.status || meta.extensions?.status || 'completed';
+    const status = rawStatus === 'complete' ? 'completed' : rawStatus;
     const contextItems = meta.context_items || [];
     const thoughts = meta.thoughts || [];
     const plan = meta.plan || null;
@@ -777,103 +986,14 @@
     const usage = msg.usage || {};
     const runInfo = meta.extensions || {};
 
-    let inspectorHtml = buildTurnMetricsHtml(meta, msg.id, { thoughts, toolCalls, logs, usage });
-
-    // 1. Context items accordion
-    if (contextItems.length > 0) {
-      const itemsList = contextItems.map(c => `
-        <div class="context-file-card">
-          <span>📄 ${escapeHtml(c.label || c.path || c.kind)}</span>
-          <span style="color:#64748b;">~${Math.round((c.content || '').length / 4)} tokens</span>
-        </div>
-      `).join('');
-
-      inspectorHtml += `
-        <div class="inspector-tray" id="tray-context-${msg.id}">
-          <button type="button" class="inspector-tray-toggle">
-            <span>📁 Injected Project Context (${contextItems.length} files)</span>
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"></polyline></svg>
-          </button>
-          <div class="inspector-tray-body">
-            <div class="context-items-list">${itemsList}</div>
-          </div>
-        </div>
-      `;
-    }
-
-    // 2. Thoughts / Reasoning accordion
-    if (thoughts.length > 0) {
-      const thoughtSteps = thoughts.map(t => `
-        <div class="thought-step-card">
-          <strong>🧠 Thought:</strong>
-          <div>${escapeHtml(t.text)}</div>
-        </div>
-      `).join('');
-
-      inspectorHtml += `
-        <div class="inspector-tray" id="tray-thoughts-${msg.id}">
-          <button type="button" class="inspector-tray-toggle">
-            <span>🧠 Reasoning &amp; Internal Thoughts (${thoughts.length} step${thoughts.length === 1 ? '' : 's'})</span>
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"></polyline></svg>
-          </button>
-          <div class="inspector-tray-body">
-            ${thoughtSteps}
-          </div>
-        </div>
-      `;
-    }
-
-    // 3. Execution plan accordion
-    if (plan && plan.steps && plan.steps.length > 0) {
-      const stepRows = plan.steps.map(s => `
-        <div class="plan-step-row">
-          <span class="step-status-icon ${s.status}">${s.status === 'done' ? '✓' : s.status === 'in_progress' ? '●' : '○'}</span>
-          <span>${escapeHtml(s.title)}</span>
-        </div>
-      `).join('');
-
-      inspectorHtml += `
-        <div class="inspector-tray open" id="tray-plan-${msg.id}">
-          <button type="button" class="inspector-tray-toggle">
-            <span>📋 Execution Plan: ${escapeHtml(plan.summary || 'Step-by-step')}</span>
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"></polyline></svg>
-          </button>
-          <div class="inspector-tray-body">
-            <div class="plan-container">${stepRows}</div>
-          </div>
-        </div>
-      `;
-    }
-
-    // 4. Tool calls & logs accordion
-    if (toolCalls.length > 0 || logs.length > 0) {
-      const toolRows = toolCalls.map(tc => `
-        <div style="margin-bottom:6px; font-family:var(--font-mono);">
-          <strong style="color:var(--accent-cyan);">🔧 ${escapeHtml(tc.name)}</strong>
-          <pre style="background:rgba(0,0,0,0.4); padding:6px; border-radius:4px; font-size:10.5px; margin-top:2px;">${escapeHtml(JSON.stringify(tc.args, null, 2))}</pre>
-          ${tc.result ? `<div style="color:#10b981; font-size:10.5px; margin-top:2px;">Result: ${escapeHtml(typeof tc.result === 'string' ? tc.result : JSON.stringify(tc.result))}</div>` : ''}
-        </div>
-      `).join('');
-
-      const logRows = logs.map(l => `
-        <div style="font-family:var(--font-mono); font-size:10.5px; color:#94a3b8;">
-          [${escapeHtml(l.stream)}] ${escapeHtml(l.text)}
-        </div>
-      `).join('');
-
-      inspectorHtml += `
-        <div class="inspector-tray" id="tray-tools-${msg.id}">
-          <button type="button" class="inspector-tray-toggle">
-            <span>🔧 Tool Executions &amp; Runtime Logs (${toolCalls.length + logs.length} events)</span>
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"></polyline></svg>
-          </button>
-          <div class="inspector-tray-body">
-            ${toolRows}
-            ${logRows}
-          </div>
-        </div>
-      `;
-    }
+    const inspectorHtml = buildTurnMetricsHtml(meta, msg.id, {
+      contextItems,
+      thoughts,
+      plan,
+      toolCalls,
+      logs,
+      usage,
+    });
 
     // Turn telemetry footer
     const latencyStr = usage.latency_ms ? `${usage.latency_ms}ms` : null;
@@ -937,8 +1057,8 @@
       setTimeout(() => {
         renderOrUpdateMermaidWorkflow(msg.id, {
           mermaid_code: persistedMermaid,
-          state: status === 'completed' ? 'running' : status,
-          phase: 'APPROVED',
+          state: status === 'completed' ? 'completed' : status,
+          phase: status === 'completed' ? 'COMPLETED' : 'APPROVED',
         });
       }, 0);
     }
@@ -1121,6 +1241,7 @@
     }
 
     activeStreamMessageId = messageId;
+    activeStreamText[messageId] = '';
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const wsUrl = `${protocol}//${window.location.host}/api/chats/${encodeURIComponent(sessionId)}/events?cursor=${cursor}&message_id=${encodeURIComponent(messageId)}`;
 
@@ -1150,6 +1271,89 @@
   }
 
   const activeStreamEvents = {};
+  const activeStreamText = {};
+
+  function renderOrUpdatePlanTray(messageId, planData) {
+    const msgElement = document.getElementById(`msg-${messageId}`);
+    if (!msgElement || !planData) return;
+
+    const steps = Array.isArray(planData.steps) ? planData.steps : [];
+    if (steps.length === 0) return;
+
+    const summary = planData.summary || planData.title || 'Step-by-step';
+    let tray = document.getElementById(`tray-plan-${messageId}`);
+
+    if (!tray) {
+      const fmtView = document.getElementById(`formatted-view-${messageId}`);
+      if (!fmtView) return;
+
+      tray = document.createElement('div');
+      tray.className = 'inspector-tray open';
+      tray.id = `tray-plan-${messageId}`;
+      tray.innerHTML = `
+        <button type="button" class="inspector-tray-toggle">
+          <span class="plan-tray-summary">📋 Execution Plan: ${escapeHtml(summary)}</span>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"></polyline></svg>
+        </button>
+        <div class="inspector-tray-body">
+          <div class="plan-container"></div>
+        </div>
+      `;
+
+      const workflowTray = document.getElementById(`tray-workflow-${messageId}`);
+      const header = fmtView.querySelector('.turn-metrics-header');
+      if (workflowTray && workflowTray.nextSibling) {
+        fmtView.insertBefore(tray, workflowTray.nextSibling);
+      } else if (workflowTray) {
+        fmtView.appendChild(tray);
+      } else if (header && header.nextSibling) {
+        fmtView.insertBefore(tray, header.nextSibling);
+      } else {
+        fmtView.appendChild(tray);
+      }
+
+      tray.querySelector('.inspector-tray-toggle').addEventListener('click', () => {
+        tray.classList.toggle('open');
+      });
+    }
+
+    const summarySpan = tray.querySelector('.plan-tray-summary');
+    if (summarySpan) {
+      summarySpan.textContent = `📋 Execution Plan: ${summary}`;
+    }
+
+    const container = tray.querySelector('.plan-container');
+    if (container) {
+      container.innerHTML = buildPlanStepsHtml(steps);
+    }
+  }
+
+  function finalizeLivePlanTray(messageId, finalStatus) {
+    const tray = document.getElementById(`tray-plan-${messageId}`);
+    if (!tray) return;
+
+    const iconFor = (st) => st === 'done' ? '✓' : st === 'in_progress' ? '●' : st === 'failed' ? '✕' : '○';
+    tray.querySelectorAll('.plan-step-row').forEach(row => {
+      const icon = row.querySelector('.step-status-icon');
+      const isPending = row.classList.contains('pending');
+      const isInProgress = row.classList.contains('in_progress');
+
+      let nextStatus = null;
+      if (finalStatus === 'completed') {
+        if (isPending || isInProgress) nextStatus = 'done';
+      } else if (finalStatus === 'error') {
+        if (isInProgress) nextStatus = 'failed';
+      }
+
+      if (nextStatus) {
+        row.className = `plan-step-row ${nextStatus}`;
+        if (icon) {
+          icon.className = `step-status-icon ${nextStatus}`;
+          icon.textContent = iconFor(nextStatus);
+        }
+      }
+    });
+  }
 
   async function renderOrUpdateMermaidWorkflow(messageId, data) {
     const msgElement = document.getElementById(`msg-${messageId}`);
@@ -1295,7 +1499,7 @@
       tray.className = 'inspector-tray open workflow-inspector-tray approved';
       if (badge) {
         badge.className = 'workflow-header-badge approved';
-        badge.textContent = '✓ Approved & Executing';
+        badge.textContent = data.state === 'completed' ? '✓ Completed' : '✓ Approved & Executing';
       }
       if (bar) bar.style.display = 'none';
     } else if (isCancelled) {
@@ -1394,10 +1598,13 @@
           }
         }
       }
+    } else if (type === 'plan') {
+      renderOrUpdatePlanTray(messageId, data);
     } else if (type === 'token') {
       const token = data.text || '';
       if (contentElement) {
-        contentElement.innerHTML += escapeHtml(token);
+        activeStreamText[messageId] = (activeStreamText[messageId] || '') + token;
+        contentElement.innerHTML = formatMarkdown(activeStreamText[messageId]);
         scrollToBottom();
       }
     } else if (type === 'thought') {
@@ -1508,11 +1715,34 @@
         }
       }
     } else if (type === 'done') {
+      const finishReason = data.finish_reason || '';
+      const isCancelled = finishReason === 'cancelled';
+      const isFailed = finishReason === 'error' || data.status === 'error';
+      const finalStatus = isCancelled ? 'cancelled' : isFailed ? 'error' : 'completed';
+
       if (msgElement) {
         const pill = msgElement.querySelector('.msg-status-pill');
         if (pill) {
-          pill.className = 'msg-status-pill completed';
-          pill.textContent = '✓ Completed';
+          pill.className = `msg-status-pill ${finalStatus}`;
+          pill.textContent = isCancelled ? '⚠ Cancelled' : isFailed ? '✕ Error' : '✓ Completed';
+        }
+
+        finalizeLivePlanTray(messageId, finalStatus);
+
+        const wfTray = document.getElementById(`tray-workflow-${messageId}`);
+        const wfBadge = document.getElementById(`workflow-badge-${messageId}`);
+        const wfBar = document.getElementById(`workflow-approval-bar-${messageId}`);
+        if (wfBar) wfBar.style.display = 'none';
+        if (wfTray && wfBadge) {
+          if (isCancelled || isFailed) {
+            wfTray.className = 'inspector-tray open workflow-inspector-tray cancelled';
+            wfBadge.className = 'workflow-header-badge cancelled';
+            wfBadge.textContent = isCancelled ? '✕ Cancelled' : '✕ Error';
+          } else {
+            wfTray.className = 'inspector-tray open workflow-inspector-tray approved';
+            wfBadge.className = 'workflow-header-badge approved';
+            wfBadge.textContent = '✓ Completed';
+          }
         }
       }
       el.btnExecute.style.display = 'inline-flex';
@@ -1520,10 +1750,12 @@
 
       // Refresh full session from server to capture updated tokens & DB state
       API.fetchChatSession(activeSessionId).then(session => {
-        activeSessionData = session;
-        updateSessionTelemetryBar();
-        renderChatSessionsList();
-        renderMessagesThread();
+        if (session && session.id === activeSessionId) {
+          activeSessionData = session;
+          updateSessionTelemetryBar();
+          renderChatSessionsList();
+          renderMessagesThread();
+        }
       });
 
     } else if (type === 'error') {
@@ -1532,6 +1764,16 @@
         if (pill) {
           pill.className = 'msg-status-pill error';
           pill.textContent = '✕ Error';
+        }
+        finalizeLivePlanTray(messageId, 'error');
+        const wfTray = document.getElementById(`tray-workflow-${messageId}`);
+        const wfBadge = document.getElementById(`workflow-badge-${messageId}`);
+        const wfBar = document.getElementById(`workflow-approval-bar-${messageId}`);
+        if (wfBar) wfBar.style.display = 'none';
+        if (wfTray && wfBadge) {
+          wfTray.className = 'inspector-tray open workflow-inspector-tray cancelled';
+          wfBadge.className = 'workflow-header-badge cancelled';
+          wfBadge.textContent = '✕ Error';
         }
       }
       el.btnExecute.style.display = 'inline-flex';

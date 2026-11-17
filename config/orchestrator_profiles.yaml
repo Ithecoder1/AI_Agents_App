@@ -1,0 +1,180 @@
+# ==============================================================================
+# Dynamic Intent-Driven Orchestrator — Execution Profiles & Routing Rules
+# ==============================================================================
+
+default_intent: "COMPLEX_PIPELINE"
+
+routing_rules:
+  DIRECT_QA:
+    task_type: "DIRECT_QA"
+    match_lightweight: true
+    prefix_keywords:
+      - "explain"
+      - "what is"
+      - "what are"
+      - "who is"
+      - "describe"
+      - "how does"
+      - "tell me"
+      - "show me"
+      - "overview of"
+      - "why "
+      - "hi"
+      - "hello"
+      - "hey"
+      - "thanks"
+      - "thank you"
+
+  ARCHITECTURE_DESIGN:
+    task_type: "ARCHITECTURE"
+    keywords:
+      - "architect"
+      - "blueprint"
+      - "design spec"
+      - "system design"
+      - "schema design"
+      - "architecture diagram"
+
+  CODE_TEST_FIX:
+    task_type: "CODE_TEST_FIX"
+    keywords:
+      - "fix"
+      - "test"
+      - "patch"
+      - "refactor"
+      - "bug"
+      - "implement code"
+      - "unit test"
+      - "self-correction"
+
+  FOCUSED_TOOL_TASK:
+    task_type: "FOCUSED_TOOL_TASK"
+    keywords:
+      - "analyze"
+      - "inspect"
+      - "audit"
+      - "search"
+      - "lint"
+      - "find in files"
+      - "check file"
+      - "review code"
+
+  COMPLEX_PIPELINE:
+    task_type: "FULL_PIPELINE"
+    keywords:
+      - "build"
+      - "create"
+      - "develop"
+      - "solve"
+      - "application"
+      - "service"
+      - "pipeline"
+      - "full"
+      - "implement"
+
+profiles:
+  DIRECT_QA:
+    task_type: "DIRECT_QA"
+    fast_path: true
+    requires_planner: false
+    requires_approval: false
+    subgraphs: []
+    skills:
+      - "direct_qa"
+    tool_policy:
+      enabled: false
+      max_active_tools: 0
+      tool_query: ""
+      base_tools: []
+    plan_template:
+      - step: 1
+        action: "direct_execution"
+        description: "Answer user query directly via fast-path"
+
+  FOCUSED_TOOL_TASK:
+    task_type: "FOCUSED_TOOL_TASK"
+    fast_path: false
+    requires_planner: true
+    requires_approval: false
+    subgraphs: []
+    skills:
+      - "code_analysis"
+    tool_policy:
+      enabled: true
+      max_active_tools: 4
+      tool_query: "file view search grep list"
+      base_tools:
+        - "search_available_tools"
+    plan_template:
+      - step: 1
+        action: "focused_tool_execution"
+        description: "Inspect workspace and execute focused tool analysis"
+
+  ARCHITECTURE_DESIGN:
+    task_type: "ARCHITECTURE"
+    fast_path: false
+    requires_planner: true
+    requires_approval: true
+    subgraphs:
+      - "architect_subgraph"
+    skills:
+      - "architecture_planning"
+    tool_policy:
+      enabled: true
+      max_active_tools: 3
+      tool_query: "file view search architecture"
+      base_tools:
+        - "search_available_tools"
+    plan_template:
+      - step: 1
+        action: "architect_subgraph"
+        description: "Generate and validate architectural blueprint"
+
+  CODE_TEST_FIX:
+    task_type: "CODE_TEST_FIX"
+    fast_path: false
+    requires_planner: true
+    requires_approval: true
+    subgraphs:
+      - "coder_qa_subgraph"
+    skills:
+      - "code_verification"
+    tool_policy:
+      enabled: true
+      max_active_tools: 5
+      tool_query: "file write view edit run command pytest"
+      base_tools:
+        - "search_available_tools"
+    plan_template:
+      - step: 1
+        action: "coder_qa_subgraph"
+        description: "Implement code and execute verification loop"
+
+  COMPLEX_PIPELINE:
+    task_type: "FULL_PIPELINE"
+    fast_path: false
+    requires_planner: true
+    requires_approval: true
+    subgraphs:
+      - "architect_subgraph"
+      - "coder_qa_subgraph"
+    skills:
+      - "architecture_planning"
+      - "code_analysis"
+      - "code_verification"
+    tool_policy:
+      enabled: true
+      max_active_tools: 5
+      tool_query: "file write view edit search run command"
+      base_tools:
+        - "search_available_tools"
+    plan_template:
+      - step: 1
+        action: "architect_subgraph"
+        description: "Synthesize architecture blueprint"
+      - step: 2
+        action: "coder_qa_subgraph"
+        description: "Implement source code and automated test harness"
+      - step: 3
+        action: "evaluator"
+        description: "Verify test results and complete milestone"

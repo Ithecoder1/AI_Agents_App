@@ -10,6 +10,28 @@ from typing import Any, Literal, TypedDict
 
 GraphStatus = Literal["PENDING", "RUNNING", "WAITING_APPROVAL", "COMPLETED", "FAILED"]
 
+IntentType = Literal[
+    "DIRECT_QA",
+    "FOCUSED_TOOL_TASK",
+    "ARCHITECTURE_DESIGN",
+    "CODE_TEST_FIX",
+    "COMPLEX_PIPELINE",
+]
+
+INTENT_DIRECT_QA: IntentType = "DIRECT_QA"
+INTENT_FOCUSED_TOOL_TASK: IntentType = "FOCUSED_TOOL_TASK"
+INTENT_ARCHITECTURE_DESIGN: IntentType = "ARCHITECTURE_DESIGN"
+INTENT_CODE_TEST_FIX: IntentType = "CODE_TEST_FIX"
+INTENT_COMPLEX_PIPELINE: IntentType = "COMPLEX_PIPELINE"
+
+ALL_INTENT_TYPES: tuple[IntentType, ...] = (
+    INTENT_DIRECT_QA,
+    INTENT_FOCUSED_TOOL_TASK,
+    INTENT_ARCHITECTURE_DESIGN,
+    INTENT_CODE_TEST_FIX,
+    INTENT_COMPLEX_PIPELINE,
+)
+
 STATUS_PENDING: GraphStatus = "PENDING"
 STATUS_RUNNING: GraphStatus = "RUNNING"
 STATUS_WAITING_APPROVAL: GraphStatus = "WAITING_APPROVAL"
@@ -37,6 +59,11 @@ class GraphState(TypedDict, total=False):
     subgraph_results: dict[str, Any]
     execution_logs: list[dict[str, Any]]
     status: GraphStatus
+
+    # Dynamic intent-driven orchestration fields
+    intent: str
+    execution_profile: dict[str, Any]
+    active_skills: list[str]
 
     # Backward-compatibility and workflow execution fields
     current_phase: str
@@ -86,6 +113,9 @@ def create_initial_graph_state(
             }
         ],
         status=initial_status,
+        intent=INTENT_COMPLEX_PIPELINE,
+        execution_profile={},
+        active_skills=[],
         current_phase="ARCHITECT",
         architecture_spec=None,
         code_files={},

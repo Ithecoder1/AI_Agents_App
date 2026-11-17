@@ -7,6 +7,12 @@ from typing import Any
 
 from app.domain.graph_state import (
     ALL_GRAPH_STATUSES,
+    ALL_INTENT_TYPES,
+    INTENT_ARCHITECTURE_DESIGN,
+    INTENT_CODE_TEST_FIX,
+    INTENT_COMPLEX_PIPELINE,
+    INTENT_DIRECT_QA,
+    INTENT_FOCUSED_TOOL_TASK,
     STATUS_COMPLETED,
     STATUS_FAILED,
     STATUS_PENDING,
@@ -14,6 +20,7 @@ from app.domain.graph_state import (
     STATUS_WAITING_APPROVAL,
     GraphState,
     GraphStatus,
+    IntentType,
     create_initial_graph_state,
 )
 
@@ -75,6 +82,9 @@ def create_initial_state(
             }
         ],
         status=initial_status,
+        intent=INTENT_COMPLEX_PIPELINE,
+        execution_profile={},
+        active_skills=[],
         current_phase=initial_phase,
         architecture_spec=None,
         code_files={},
@@ -111,7 +121,13 @@ def append_execution_log(
 
 __all__ = [
     "ALL_GRAPH_STATUSES",
+    "ALL_INTENT_TYPES",
     "ALL_PHASES",
+    "INTENT_ARCHITECTURE_DESIGN",
+    "INTENT_CODE_TEST_FIX",
+    "INTENT_COMPLEX_PIPELINE",
+    "INTENT_DIRECT_QA",
+    "INTENT_FOCUSED_TOOL_TASK",
     "PHASE_ARCHITECT",
     "PHASE_CODER",
     "PHASE_COMPLETED",
@@ -127,6 +143,7 @@ __all__ = [
     "CompanyState",
     "GraphState",
     "GraphStatus",
+    "IntentType",
     "append_execution_log",
     "create_initial_graph_state",
     "create_initial_state",

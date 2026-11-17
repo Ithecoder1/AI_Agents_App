@@ -22,6 +22,8 @@ from company_core.state import (
     PHASE_CODER,
     PHASE_DEVOPS,
     PHASE_QA,
+    STATUS_COMPLETED,
+    STATUS_RUNNING,
     CompanyState,
     GraphState,
     append_execution_log,
@@ -187,6 +189,7 @@ def make_evaluator_node(
 
         return {
             **evaluated,
+            "status": STATUS_COMPLETED if passed else evaluated.get("status", STATUS_RUNNING),
             "current_node": "evaluator_node",
             "subgraph_results": sub_results,
         }

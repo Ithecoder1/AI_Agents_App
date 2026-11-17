@@ -5,14 +5,22 @@ from __future__ import annotations
 from pathlib import Path
 
 from app.application.tools.registry import DynamicToolRegistry
+from app.domain.enums import EventType
 from app.domain.graph_state import (
+    INTENT_ARCHITECTURE_DESIGN,
+    INTENT_CODE_TEST_FIX,
+    INTENT_COMPLEX_PIPELINE,
+    INTENT_DIRECT_QA,
+    INTENT_FOCUSED_TOOL_TASK,
     STATUS_COMPLETED,
     STATUS_PENDING,
     STATUS_RUNNING,
     STATUS_WAITING_APPROVAL,
     create_initial_graph_state,
 )
+from app.domain.models import ExecutionParams, ExecutionTask, Prompt
 from app.domain.tools import ToolDescriptor
+from company_core.config import ConfigManager
 from company_core.orchestrator import AutonomousStartupOrchestrator
 from company_core.orchestrator_graph import (
     compile_orchestrator_workflow,
@@ -20,8 +28,13 @@ from company_core.orchestrator_graph import (
     make_planner_node,
     make_subgraph_router_node,
     make_triage_node,
+    route_after_architect,
+    route_after_planner,
     route_after_router,
+    route_after_triage,
 )
+from company_core.persistence import JsonStateCheckpointer
+from company_core.skills import get_default_skill_registry
 from company_core.state import create_initial_state
 from company_core.subgraphs.architect_subgraph import (
     compile_architect_subgraph,
@@ -30,6 +43,7 @@ from company_core.subgraphs.coder_qa_subgraph import (
     compile_coder_qa_subgraph,
     make_coder_qa_route,
 )
+from company_core.turn_orchestrator import GraphTurnOrchestrator, generate_mermaid_workflow
 from providers.adapters.fake import FakeProvider
 
 from tests.factories import make_config, make_deps
@@ -261,3 +275,241 @@ def test_autonomous_orchestrator_master_workflow_method(tmp_path: Path) -> None:
     assert "qa" in final_state["completed_tasks"]
     assert (target_dir / "app" / "engine.py").is_file()
     assert state_file.is_file()
+
+
+# --------------------------------------------------------------------------- #
+# 6. Dynamic, Intent-Driven Orchestration, YAML Profiles & Modular Skills
+# --------------------------------------------------------------------------- #
+def test_config_profiles_and_skills_loading() -> None:
+    cfg = ConfigManager()
+    skills = get_default_skill_registry()
+
+    assert INTENT_DIRECT_QA in cfg.profiles
+    assert INTENT_FOCUSED_TOOL_TASK in cfg.profiles
+    assert INTENT_ARCHITECTURE_DESIGN in cfg.profiles
+    assert INTENT_CODE_TEST_FIX in cfg.profiles
+    assert INTENT_COMPLEX_PIPELINE in cfg.profiles
+
+    # Intent classifications from orchestrator_profiles.yaml
+    p_qa = cfg.classify_intent("explain what hexagonal architecture is")
+    assert p_qa.intent == INTENT_DIRECT_QA
+    assert p_qa.fast_path is True
+    assert p_qa.tool_policy.is_tool_less is True
+
+    p_focused = cfg.classify_intent("Analyze and inspect workspace code structure")
+    assert p_focused.intent == INTENT_FOCUSED_TOOL_TASK
+    assert p_focused.subgraphs == ()
+    assert "code_analysis" in p_focused.skills
+
+    p_arch = cfg.classify_intent("Design a modular system architecture blueprint")
+    assert p_arch.intent == INTENT_ARCHITECTURE_DESIGN
+    assert p_arch.subgraphs == ("architect_subgraph",)
+
+    p_fix = cfg.classify_intent("Fix bug and test unit assertions for 1+1")
+    assert p_fix.intent == INTENT_CODE_TEST_FIX
+    assert p_fix.subgraphs == ("coder_qa_subgraph",)
+
+    p_full = cfg.classify_intent(
+        "Build a complete FastAPI user authentication service with JWT and automated pytest suite"
+    )
+    assert p_full.intent == INTENT_COMPLEX_PIPELINE
+    assert p_full.subgraphs == ("architect_subgraph", "coder_qa_subgraph")
+
+    # Modular SkillRegistry resolution
+    resolved = skills.resolve_for_profile(p_full.skills)
+    assert [s.name for s in resolved] == [
+        "architecture_planning",
+        "code_analysis",
+        "code_verification",
+    ]
+    assert "view_file" in resolved[1].spec.recommended_tools
+    assert "pytest" in skills.build_tool_query(p_fix.skills)
+
+
+def test_dynamic_fast_path_direct_qa_bypasses_subgraphs(tmp_path: Path) -> None:
+    tool_reg = DynamicToolRegistry(
+        [
+            ToolDescriptor("view_file", "filesystem", "View file contents"),
+            ToolDescriptor("run_command", "terminal", "Run terminal shell command"),
+        ]
+    )
+
+    for idx, prompt_text in enumerate(("hi", "explain what hexagonal architecture is")):
+        target_dir = tmp_path / f"fast_path_{idx}"
+        checkpointer = JsonStateCheckpointer(log_path=tmp_path / f"chk_fast_{idx}.json")
+        compiled = compile_orchestrator_workflow(
+            checkpointer=checkpointer,
+            project_root_resolver=lambda _, d=target_dir: d,
+            tool_registry=tool_reg,
+        )
+
+        initial = create_initial_graph_state(prompt_text, project_id=f"fast-{idx}")
+        final = compiled.invoke(initial, config={"configurable": {"thread_id": f"fast-{idx}"}})
+
+        assert final["intent"] == INTENT_DIRECT_QA
+        assert final["task_type"] == "DIRECT_QA"
+        assert final["status"] == STATUS_COMPLETED
+        assert final["active_tools"] == []
+        assert final["active_skills"] == ["direct_qa"]
+        assert final["completed_tasks"] == []
+        assert final["architecture_spec"] is None
+        assert final["code_files"] == {}
+
+        agents_executed = [entry["agent"] for entry in final["execution_logs"]]
+        assert "ceo_triage" in agents_executed
+        assert "executor" in agents_executed
+        assert "ceo_planner" not in agents_executed
+        assert "subgraph_router" not in agents_executed
+        assert "architect" not in agents_executed
+        assert "coder" not in agents_executed
+        assert "qa" not in agents_executed
+
+
+def test_dynamic_focused_tool_task_bypasses_heavy_subgraphs(tmp_path: Path) -> None:
+    tool_reg = DynamicToolRegistry(
+        [
+            ToolDescriptor("view_file", "filesystem", "View file contents"),
+            ToolDescriptor("grep_search", "search", "Search pattern across files"),
+            ToolDescriptor("list_dir", "filesystem", "List directory contents"),
+            ToolDescriptor("write_to_file", "filesystem", "Write contents to a file"),
+        ]
+    )
+    checkpointer = JsonStateCheckpointer(log_path=tmp_path / "chk_focused.json")
+    compiled = compile_orchestrator_workflow(
+        checkpointer=checkpointer,
+        project_root_resolver=lambda _: tmp_path / "focused",
+        tool_registry=tool_reg,
+    )
+
+    initial = create_initial_graph_state(
+        "Analyze and inspect project workspace files",
+        project_id="focused-1",
+    )
+    final = compiled.invoke(initial, config={"configurable": {"thread_id": "focused-1"}})
+
+    assert final["intent"] == INTENT_FOCUSED_TOOL_TASK
+    assert final["status"] == STATUS_COMPLETED
+    assert final["active_skills"] == ["code_analysis"]
+    assert len(final["active_tools"]) > 0
+    assert final["completed_tasks"] == []
+    agents_executed = [entry["agent"] for entry in final["execution_logs"]]
+    assert "executor" in agents_executed
+    assert "architect" not in agents_executed
+    assert "coder" not in agents_executed
+
+
+def test_dynamic_architecture_only_bypasses_coder_qa(tmp_path: Path) -> None:
+    target_dir = tmp_path / "arch_only"
+    checkpointer = JsonStateCheckpointer(log_path=tmp_path / "chk_arch.json")
+    compiled = compile_orchestrator_workflow(
+        checkpointer=checkpointer,
+        project_root_resolver=lambda _: target_dir,
+    )
+
+    initial = create_initial_graph_state(
+        "Design a modular system architecture blueprint",
+        project_id="arch-only-1",
+    )
+    final = compiled.invoke(initial, config={"configurable": {"thread_id": "arch-only-1"}})
+
+    assert final["intent"] == INTENT_ARCHITECTURE_DESIGN
+    assert final["task_type"] == "ARCHITECTURE"
+    assert final["status"] == STATUS_COMPLETED
+    assert final["architecture_spec"] is not None
+    assert "architecture" in final["completed_tasks"]
+    assert "code" not in final["completed_tasks"]
+    assert "qa" not in final["completed_tasks"]
+    assert final["code_files"] == {}
+    assert route_after_architect(final) == "__end__"
+
+
+def test_dynamic_code_test_fix_bypasses_architect(tmp_path: Path) -> None:
+    target_dir = tmp_path / "code_fix_only"
+    checkpointer = JsonStateCheckpointer(log_path=tmp_path / "chk_fix.json")
+    compiled = compile_orchestrator_workflow(
+        checkpointer=checkpointer,
+        project_root_resolver=lambda _: target_dir,
+        simulate_initial_bug=False,
+    )
+
+    initial = create_initial_graph_state(
+        "Fix bug and test unit assertions for 1+1",
+        project_id="fix-only-1",
+    )
+    final = compiled.invoke(initial, config={"configurable": {"thread_id": "fix-only-1"}})
+
+    assert final["intent"] == INTENT_CODE_TEST_FIX
+    assert final["task_type"] == "CODE_TEST_FIX"
+    assert final["status"] == STATUS_COMPLETED
+    assert "code" in final["completed_tasks"]
+    assert "devops" in final["completed_tasks"]
+    assert "qa" in final["completed_tasks"]
+    assert "architecture" not in final["completed_tasks"]
+    assert final["architecture_spec"] is None
+    assert "PASSED" in str(final["test_results"])
+
+
+def test_conditional_routing_helpers() -> None:
+    s_qa = create_initial_graph_state("hi")
+    s_qa["intent"] = INTENT_DIRECT_QA
+    s_qa["task_type"] = "DIRECT_QA"
+    assert route_after_triage(s_qa) == "executor_node"
+
+    s_qa_gated = create_initial_graph_state("hi", auto_approve=False)
+    s_qa_gated["intent"] = INTENT_DIRECT_QA
+    assert route_after_triage(s_qa_gated) == "planner_node"
+
+    s_focused = create_initial_graph_state("inspect file")
+    s_focused["intent"] = INTENT_FOCUSED_TOOL_TASK
+    s_focused["status"] = STATUS_RUNNING
+    assert route_after_planner(s_focused) == "executor_node"
+
+    s_wait = create_initial_graph_state("build service")
+    s_wait["status"] = STATUS_WAITING_APPROVAL
+    assert route_after_planner(s_wait) == "__end__"
+
+
+async def test_turn_orchestrator_dynamic_fast_path_and_mermaid() -> None:
+    fake_cfg = make_config("fake-turn", "fake", options={"chunks": ["Fast ", "Answer"]})
+    fake_prov = FakeProvider(fake_cfg, make_deps())
+    tool_reg = DynamicToolRegistry(
+        [ToolDescriptor("view_file", "filesystem", "View file contents")]
+    )
+    orchestrator = GraphTurnOrchestrator(tool_registry=tool_reg)
+
+    prompt = Prompt(user_prompt="explain what hexagonal architecture is", literal=True)
+    task = ExecutionTask.create(
+        prompt, ExecutionParams(provider_id="fake-turn"), workspace="."
+    ).start("fake-turn")
+
+    events = []
+    async for ev in orchestrator.stream_turn(
+        task,
+        fake_prov,
+        require_approval=False,
+        active_tools=list(tool_reg.all_descriptors()),
+    ):
+        events.append(ev)
+
+    status_with_graph = [
+        e for e in events if e.type is EventType.STATUS and "mermaid_code" in e.data
+    ]
+    assert len(status_with_graph) >= 1
+    assert "DIRECT_QA" in status_with_graph[0].data["mermaid_code"]
+
+    tokens = "".join(e.data["text"] for e in events if e.type is EventType.TOKEN)
+    assert "Fast Answer" in tokens
+
+    # Distinct intent-specific Mermaid diagrams generated cleanly
+    assert "ArchitectSub" in generate_mermaid_workflow(
+        "Design a modular system architecture blueprint",
+        intent=INTENT_ARCHITECTURE_DESIGN,
+    )
+    assert "CoderSub" in generate_mermaid_workflow(
+        "Fix bug and test unit assertions",
+        intent=INTENT_CODE_TEST_FIX,
+    )
+    assert "ArchitectSub" not in generate_mermaid_workflow(
+        "Fix bug and test unit assertions",
+        intent=INTENT_CODE_TEST_FIX,
+    )

@@ -12,7 +12,10 @@ from langgraph.graph.state import CompiledStateGraph
 
 from company_core.agents.software_architect import SoftwareArchitectAgent
 from company_core.state import (
+    INTENT_ARCHITECTURE_DESIGN,
     PHASE_ARCHITECT,
+    PHASE_COMPLETED,
+    STATUS_COMPLETED,
     CompanyState,
     GraphState,
     append_execution_log,
@@ -97,13 +100,26 @@ def schema_validator_node(state: GraphState) -> GraphState:
         details={"valid": is_valid},
     )
 
-    return {
+    profile = state.get("execution_profile") or {}
+    profile_subgraphs = profile.get("subgraphs")
+    is_architecture_only = (
+        state.get("task_type") == "ARCHITECTURE"
+        or state.get("intent") == INTENT_ARCHITECTURE_DESIGN
+        or (isinstance(profile_subgraphs, list) and "coder_qa_subgraph" not in profile_subgraphs)
+    )
+
+    next_state: GraphState = {
         **state,
         "completed_tasks": completed,
         "subgraph_results": sub_results,
         "current_node": "schema_validator_node",
         "execution_logs": logs,
     }
+    if is_valid and is_architecture_only:
+        next_state["status"] = STATUS_COMPLETED
+        next_state["current_phase"] = PHASE_COMPLETED
+
+    return next_state
 
 
 def create_architect_subgraph() -> StateGraph[Any, Any, Any, Any]:

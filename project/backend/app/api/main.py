@@ -25,6 +25,7 @@ from pydantic import BaseModel, Field
 from app.api.composition import (
     default_chat_services,
     default_registry,
+    default_triage_service,
     default_workspace_manager,
     repo_root,
 )
@@ -34,9 +35,10 @@ from app.domain.enums import EventType
 from app.domain.errors import ConflictError, NotFoundError, ProviderError, ValidationError
 from app.domain.models import ExecutionParams, ExecutionTask, Prompt
 
-# Initialize registry, settings, workspace manager and chat persistence services
+# Initialize registry, settings, workspace manager, triage service and chat persistence services
 registry, settings = default_registry()
 workspace_manager = default_workspace_manager()
+triage_service = default_triage_service()
 db_engine, chat_repo, chat_session_service, chat_turn_service = default_chat_services(
     settings, registry, workspace_manager
 )
@@ -44,7 +46,9 @@ db_engine, chat_repo, chat_session_service, chat_turn_service = default_chat_ser
 
 @contextlib.asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    # Recover any assistant messages left streaming by a previous crash/shutdown
+    # Warm-bootstrap Tier 2 CPU semantic router and recover any interrupted messages
+    triage_service.warmup()
+    app.state.triage_service = triage_service
     await chat_turn_service.recover_interrupted()
     yield
     await chat_turn_service.shutdown()

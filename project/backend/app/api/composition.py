@@ -14,6 +14,7 @@ from app.application.chat_turns import ChatTurnService
 from app.application.registry import ProviderRegistry, ProviderState
 from app.application.settings import AppSettings
 from app.application.tools import DynamicToolRegistry
+from app.application.triage import CascadingTriageService, bootstrap_triage_service
 from app.application.workspace_manager import WorkspaceManager
 from app.domain.ports.agent_provider import ProviderDeps
 from app.infrastructure.config import (
@@ -80,6 +81,11 @@ def build_workspace_manager(root: Path | None = None) -> WorkspaceManager:
 
 def default_workspace_manager() -> WorkspaceManager:
     return build_workspace_manager(repo_root())
+
+
+def default_triage_service() -> CascadingTriageService:
+    """Warm-bootstrap the local CPU semantic triage service once at startup."""
+    return bootstrap_triage_service()
 
 
 def load_tool_registry(config_dir: Path) -> DynamicToolRegistry:

@@ -17,6 +17,8 @@ __pycache__/
 .mypy_cache/
 .ruff_cache/
 .import_linter_cache/
+.cache/
+project/.cache/
 
 # Node
 node_modules/

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import yaml
 from app.domain.graph_state import (
@@ -15,6 +15,9 @@ from app.domain.graph_state import (
     INTENT_FOCUSED_TOOL_TASK,
 )
 from app.domain.tools import ToolRetrievalPolicy
+
+if TYPE_CHECKING:
+    from app.application.triage import CascadingTriageService, TriageDecision
 
 
 @dataclass(frozen=True, slots=True)
@@ -106,21 +109,6 @@ class OrchestratorProfileConfig:
             },
             "plan_template": [dict(step) for step in self.plan_template],
         }
-
-
-_DEFAULT_ACTION_OVERRIDES = (
-    "build",
-    "create",
-    "develop",
-    "implement",
-    "refactor",
-    "patch",
-    "fix",
-    "solve",
-    "generate",
-    "write",
-    "add feature",
-)
 
 
 def _default_routing_rules() -> dict[str, IntentRoutingRule]:
@@ -364,6 +352,7 @@ class ConfigManager:
         agents_path: Path | str | None = None,
         tasks_path: Path | str | None = None,
         profiles_path: Path | str | None = None,
+        triage_service: CascadingTriageService | None = None,
     ) -> None:
         self._agents_path = Path(agents_path) if agents_path else _locate_config_file("agents.yaml")
         self._tasks_path = Path(tasks_path) if tasks_path else _locate_config_file("tasks.yaml")
@@ -372,10 +361,12 @@ class ConfigManager:
             if profiles_path
             else _locate_config_file("orchestrator_profiles.yaml")
         )
+        self._triage_service = triage_service
         self._agents: dict[str, AgentConfig] = {}
         self._workflow: WorkflowConfig = WorkflowConfig()
         self._default_intent: str = INTENT_COMPLEX_PIPELINE
         self._routing_rules: dict[str, IntentRoutingRule] = _default_routing_rules()
+        self._has_custom_routing_rules: bool = False
         self._profiles: dict[str, OrchestratorProfileConfig] = _default_orchestrator_profiles()
         self.reload()
 
@@ -447,7 +438,9 @@ class ConfigManager:
         self._load_orchestrator_profiles()
 
     def _load_orchestrator_profiles(self) -> None:
-        self._routing_rules = _default_routing_rules()
+        default_rules = _default_routing_rules()
+        self._routing_rules = default_rules
+        self._has_custom_routing_rules = False
         self._profiles = _default_orchestrator_profiles()
         self._default_intent = INTENT_COMPLEX_PIPELINE
 
@@ -476,6 +469,7 @@ class ConfigManager:
                 )
             if parsed_rules:
                 self._routing_rules = parsed_rules
+                self._has_custom_routing_rules = parsed_rules != default_rules
 
         raw_profiles = data.get("profiles")
         if isinstance(raw_profiles, dict):
@@ -534,6 +528,7 @@ class ConfigManager:
             "ARCHITECTURE": INTENT_ARCHITECTURE_DESIGN,
             "ARCHITECTURE_DESIGN": INTENT_ARCHITECTURE_DESIGN,
             "CODE_TEST_FIX": INTENT_CODE_TEST_FIX,
+            "ARCHITECT_PIPELINE": INTENT_COMPLEX_PIPELINE,
             "FULL_PIPELINE": INTENT_COMPLEX_PIPELINE,
             "COMPLEX_PIPELINE": INTENT_COMPLEX_PIPELINE,
             "DEFAULT": self._default_intent,
@@ -551,62 +546,57 @@ class ConfigManager:
             _default_orchestrator_profiles()[INTENT_COMPLEX_PIPELINE],
         )
 
+    def _classify_with_custom_rules(self, requirement: str) -> OrchestratorProfileConfig | None:
+        req_lower = requirement.strip().lower()
+        default_rules = _default_routing_rules()
+        for intent_name, rule in self._routing_rules.items():
+            default_rule = default_rules.get(intent_name)
+            if default_rule == rule:
+                continue
+            if _matches_prefix(req_lower, rule.prefix_keywords) or _matches_keywords(
+                req_lower, rule.keywords
+            ):
+                return self.get_profile(intent_name)
+        return None
+
+    def classify_intent_with_decision(
+        self,
+        requirement: str,
+        *,
+        is_lightweight: bool = False,
+        triage_service: CascadingTriageService | None = None,
+    ) -> tuple[OrchestratorProfileConfig, TriageDecision]:
+        """Classify a prompt via CascadingTriageService and return (profile, decision)."""
+        from company_core.triage import resolve_profile_with_triage
+
+        svc = triage_service or self._triage_service
+        profile, decision = resolve_profile_with_triage(
+            requirement,
+            self._profiles,
+            default_intent=self._default_intent,
+            triage_service=svc,
+            is_lightweight=is_lightweight,
+        )
+        if not is_lightweight and self._has_custom_routing_rules:
+            override = self._classify_with_custom_rules(requirement)
+            if override is not None:
+                profile = override
+        return profile, decision
+
     def classify_intent(
         self,
         requirement: str,
         *,
         is_lightweight: bool = False,
+        triage_service: CascadingTriageService | None = None,
     ) -> OrchestratorProfileConfig:
         """Classify a prompt into a configured OrchestratorProfileConfig."""
-        cleaned = requirement.strip()
-        req_lower = cleaned.lower()
-
-        if is_lightweight:
-            return self.get_profile(INTENT_DIRECT_QA)
-
-        direct_rule = self._routing_rules.get(INTENT_DIRECT_QA)
-        has_action_override = _matches_keywords(req_lower, _DEFAULT_ACTION_OVERRIDES)
-        if (
-            direct_rule
-            and _matches_prefix(req_lower, direct_rule.prefix_keywords)
-            and not has_action_override
-        ):
-            return self.get_profile(INTENT_DIRECT_QA)
-
-        targeted_prefixes = (
-            "fix",
-            "patch",
-            "bug",
-            "refactor",
-            "architect",
-            "design",
-            "analyze",
-            "inspect",
-            "audit",
-            "lint",
-            "search",
-            "review",
+        profile, _ = self.classify_intent_with_decision(
+            requirement,
+            is_lightweight=is_lightweight,
+            triage_service=triage_service,
         )
-        full_build_markers = ("build", "create", "develop", "service", "application", "pipeline")
-        if _matches_keywords(req_lower, full_build_markers) and not _matches_prefix(
-            req_lower, targeted_prefixes
-        ):
-            return self.get_profile(INTENT_COMPLEX_PIPELINE)
-
-        for intent_name in (
-            INTENT_ARCHITECTURE_DESIGN,
-            INTENT_CODE_TEST_FIX,
-            INTENT_FOCUSED_TOOL_TASK,
-        ):
-            rule = self._routing_rules.get(intent_name)
-            if rule and _matches_keywords(req_lower, rule.keywords):
-                return self.get_profile(intent_name)
-
-        complex_rule = self._routing_rules.get(INTENT_COMPLEX_PIPELINE)
-        if complex_rule and _matches_keywords(req_lower, complex_rule.keywords):
-            return self.get_profile(INTENT_COMPLEX_PIPELINE)
-
-        return self.get_profile(self._default_intent)
+        return profile
 
     @property
     def routing_rules(self) -> dict[str, IntentRoutingRule]:

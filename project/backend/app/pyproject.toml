@@ -17,6 +17,8 @@ dependencies = [
     "sqlalchemy[asyncio]>=2.0",
     "aiosqlite>=0.20",
     "alembic>=1.13",
+    "semantic-router>=0.1.0",
+    "sentence-transformers>=3.0.0",
 ]
 
 [project.optional-dependencies]
@@ -37,6 +39,7 @@ packages = [
     "app.api",
     "app.application",
     "app.application.tools",
+    "app.application.triage",
     "app.domain",
     "app.domain.ports",
     "app.infrastructure",

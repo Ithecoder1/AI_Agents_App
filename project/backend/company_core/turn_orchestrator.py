@@ -14,7 +14,7 @@ from typing import Any
 
 from app.application.tools.registry import DynamicToolRegistry
 from app.application.tools.retriever import ToolRetriever
-from app.application.triage import is_lightweight_query, should_load_workspace_context
+from app.application.triage import CascadingTriageService, get_triage_service
 from app.domain.enums import EventType
 from app.domain.models import ExecutionTask, StreamEvent, Usage
 from app.domain.ports.agent_provider import IAgentProvider
@@ -34,32 +34,13 @@ from company_core.state import (
 )
 
 
-def is_direct_query(prompt: str) -> bool:
-    """Check if the user prompt is a direct query/greeting or a workspace development task."""
-    cleaned = prompt.strip()
-    if is_lightweight_query(cleaned):
-        return True
-    lower = cleaned.lower()
-    # Explanatory / informational questions without build/fix/analyze directives
-    if any(
-        lower.startswith(k)
-        for k in (
-            "explain",
-            "what is",
-            "what are",
-            "who is",
-            "describe",
-            "how does",
-            "tell me",
-            "show me",
-            "overview of",
-            "why ",
-        )
-    ):
-        action_verbs = ("build", "create", "develop", "implement", "fix", "patch", "refactor")
-        if not any(v in lower for v in action_verbs):
-            return True
-    return not should_load_workspace_context(cleaned)
+def is_direct_query(
+    prompt: str,
+    triage_service: CascadingTriageService | None = None,
+) -> bool:
+    """Check if the user prompt resolves to DIRECT_QA via the cascading triage pipeline."""
+    svc = triage_service or get_triage_service()
+    return svc.triage(prompt.strip()).intent == "DIRECT_QA"
 
 
 def _approval_edges(
@@ -89,6 +70,7 @@ def generate_mermaid_workflow(
     status: str = "WAITING_APPROVAL",
     provider_name: str = "Agent",
     intent: str | None = None,
+    triage_service: CascadingTriageService | None = None,
 ) -> str:
     """Generate deterministic Mermaid diagram syntax tailored to the resolved intent profile."""
     safe_provider = provider_name.replace("(", "").replace(")", "").strip() or "Agent"
@@ -97,7 +79,7 @@ def generate_mermaid_workflow(
         cfg = get_config()
         resolved_intent = cfg.classify_intent(
             user_requirement,
-            is_lightweight=is_direct_query(user_requirement),
+            triage_service=triage_service,
         ).intent
 
     style_defs = (
@@ -246,12 +228,14 @@ class GraphTurnOrchestrator:
         tool_registry: DynamicToolRegistry | None = None,
         config: ConfigManager | None = None,
         skill_registry: SkillRegistry | None = None,
+        triage_service: CascadingTriageService | None = None,
     ) -> None:
         self.checkpoint_dir = checkpoint_dir
         self.max_retries = max_retries
         self.tool_registry = tool_registry
         self.config = config or get_config()
         self.skill_registry = skill_registry or get_default_skill_registry()
+        self.triage_service = triage_service or get_triage_service()
 
     def _provision_focused_tools(
         self,
@@ -405,9 +389,11 @@ class GraphTurnOrchestrator:
         target_workspace.mkdir(parents=True, exist_ok=True)
         checkpoint_path = target_workspace / "company_state.json"
 
-        # 2. Classify incoming prompt intent dynamically
-        is_direct = is_direct_query(user_prompt)
-        profile = self.config.classify_intent(user_prompt, is_lightweight=is_direct)
+        # 2. Classify incoming prompt intent dynamically via CascadingTriageService
+        profile, triage_decision = self.config.classify_intent_with_decision(
+            user_prompt,
+            triage_service=self.triage_service,
+        )
 
         # 3. Initial Status & Profile Triage Telemetry
         yield StreamEvent.create(
@@ -417,7 +403,9 @@ class GraphTurnOrchestrator:
             state="running",
             phase="INITIALIZING",
             message=(
-                f"Dynamic Orchestrator resolved intent '{profile.intent}' with {provider_name}..."
+                f"Dynamic Orchestrator resolved intent '{profile.intent}' "
+                f"(tier={triage_decision.tier}, conf={triage_decision.confidence:.2f}) "
+                f"with {provider_name}..."
             ),
         )
         yield StreamEvent.create(
@@ -426,7 +414,8 @@ class GraphTurnOrchestrator:
             EventType.THOUGHT,
             text=(
                 f"Intent Triage: Classified as {profile.intent} "
-                f"(skills={list(profile.skills)}, subgraphs={list(profile.subgraphs)}, "
+                f"(tier={triage_decision.tier}, confidence={triage_decision.confidence:.3f}, "
+                f"skills={list(profile.skills)}, subgraphs={list(profile.subgraphs)}, "
                 f"fast_path={profile.fast_path})."
             ),
         )

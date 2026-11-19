@@ -14,7 +14,7 @@ from typing import Any, cast
 
 from app.application.tools.registry import DynamicToolRegistry
 from app.application.tools.retriever import ToolRetriever
-from app.application.triage import is_lightweight_query
+from app.application.triage import CascadingTriageService, get_triage_service
 from app.domain.models import ExecutionParams, ExecutionTask, Prompt
 from app.domain.ports.agent_provider import IAgentProvider
 from langgraph.graph import END, StateGraph
@@ -53,15 +53,17 @@ def make_triage_node(
     tool_registry: DynamicToolRegistry | None = None,
     config: ConfigManager | None = None,
     skill_registry: SkillRegistry | None = None,
+    triage_service: CascadingTriageService | None = None,
 ) -> Callable[[GraphState], GraphState]:
-    """Triage intent using config rules, attach modular skills, and provision JIT tools."""
+    """Triage intent via CascadingTriageService, attach skills, and provision JIT tools."""
     cfg = config or get_config()
     skills = skill_registry or get_default_skill_registry()
+    triage_svc = triage_service or get_triage_service()
 
     def triage_node(state: GraphState) -> GraphState:
         req = state.get("user_requirement", "").strip()
-        is_light = is_lightweight_query(req)
-        profile = cfg.classify_intent(req, is_lightweight=is_light)
+        profile, decision = cfg.classify_intent_with_decision(req, triage_service=triage_svc)
+        is_light = decision.tier == 1 and decision.intent == "DIRECT_QA"
 
         # Resolve and attach modular skills declared in the profile
         resolved_skills = skills.resolve_for_profile(profile.skills)
@@ -108,11 +110,18 @@ def make_triage_node(
             phase=PHASE_ARCHITECT,
             message=(
                 f"Triage: Classified intent='{profile.intent}' "
-                f"(task_type='{profile.task_type}', Lightweight={is_light}, "
-                f"fast_path={profile.fast_path})."
+                f"(task_type='{profile.task_type}', tier={decision.tier}, "
+                f"confidence={decision.confidence:.3f}, fast_path={profile.fast_path})."
             ),
             details={
                 "intent": profile.intent,
+                "triage_intent": decision.intent,
+                "confidence": round(decision.confidence, 4),
+                "tier": decision.tier,
+                "requires_workspace_manifest": decision.requires_workspace_manifest,
+                "target_model_tier": decision.target_model_tier,
+                "token_budget": decision.token_budget,
+                "latency_ms": round(decision.latency_ms, 3),
                 "task_type": profile.task_type,
                 "is_lightweight": is_light,
                 "fast_path": profile.fast_path,
@@ -125,6 +134,13 @@ def make_triage_node(
         sub_results = dict(next_state.get("subgraph_results") or {})
         sub_results["triage"] = {
             "intent": profile.intent,
+            "triage_intent": decision.intent,
+            "confidence": round(decision.confidence, 4),
+            "tier": decision.tier,
+            "requires_workspace_manifest": decision.requires_workspace_manifest,
+            "target_model_tier": decision.target_model_tier,
+            "token_budget": decision.token_budget,
+            "latency_ms": round(decision.latency_ms, 3),
             "task_type": profile.task_type,
             "is_lightweight": is_light,
             "fast_path": profile.fast_path,
@@ -433,10 +449,12 @@ def create_orchestrator_workflow(
     max_retries: int | None = None,
     config: ConfigManager | None = None,
     skill_registry: SkillRegistry | None = None,
+    triage_service: CascadingTriageService | None = None,
 ) -> StateGraph[Any, Any, Any, Any]:
     """Construct the Dynamic Master LangGraph StateGraph with intent-driven conditional routing."""
     cfg = config or get_config()
     skills = skill_registry or get_default_skill_registry()
+    triage_svc = triage_service or get_triage_service()
     retries = max_retries if max_retries is not None else cfg.workflow.max_retries
 
     workflow: StateGraph[Any, Any, Any, Any] = StateGraph(CompanyState)
@@ -450,6 +468,7 @@ def create_orchestrator_workflow(
                 tool_registry=tool_registry,
                 config=cfg,
                 skill_registry=skills,
+                triage_service=triage_svc,
             ),
         ),
     )
@@ -544,6 +563,7 @@ def compile_orchestrator_workflow(
     max_retries: int | None = None,
     config: ConfigManager | None = None,
     skill_registry: SkillRegistry | None = None,
+    triage_service: CascadingTriageService | None = None,
 ) -> CompiledStateGraph[Any, Any, Any, Any]:
     """Compile the Dynamic Master Orchestrator StateGraph into an executable LangGraph instance."""
     workflow = create_orchestrator_workflow(
@@ -554,6 +574,7 @@ def compile_orchestrator_workflow(
         max_retries=max_retries,
         config=config,
         skill_registry=skill_registry,
+        triage_service=triage_service,
     )
     chk = checkpointer if checkpointer is not None else JsonStateCheckpointer()
     return workflow.compile(checkpointer=chk)

@@ -1,1 +1,3 @@
 pytest>=7.0.0
+semantic-router>=0.1.0
+sentence-transformers>=3.0.0

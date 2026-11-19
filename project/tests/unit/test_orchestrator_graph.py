@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from app.application.tools.registry import DynamicToolRegistry
+from app.application.triage import CallableMicroLLMClient, CascadingTriageService
 from app.domain.enums import EventType
 from app.domain.graph_state import (
     INTENT_ARCHITECTURE_DESIGN,
@@ -109,6 +111,64 @@ def test_triage_node_heuristics_and_jit_tools() -> None:
     )
     out_full = triage(state_full)
     assert out_full["task_type"] == "FULL_PIPELINE"
+
+
+def test_triage_node_with_injected_cascading_triage_service() -> None:
+    tool_reg = DynamicToolRegistry(
+        [
+            ToolDescriptor("view_file", "filesystem", "View file contents"),
+            ToolDescriptor("run_command", "terminal", "Run terminal shell command"),
+        ]
+    )
+    service = CascadingTriageService(
+        micro_llm_client=CallableMicroLLMClient(
+            lambda _sys, _usr: json.dumps(
+                {
+                    "intent": "CODE_TEST_FIX",
+                    "confidence": 0.92,
+                    "requires_workspace_manifest": True,
+                    "target_model_tier": "reasoning",
+                    "token_budget": 2048,
+                }
+            )
+        )
+    )
+    triage = make_triage_node(tool_registry=tool_reg, triage_service=service)
+
+    # 1. Tier 1 slash command
+    out_cmd = triage(create_initial_graph_state("/help"))
+    triage_cmd = out_cmd["subgraph_results"]["triage"]
+    assert triage_cmd["triage_intent"] == "DIRECT_QA"
+    assert triage_cmd["tier"] == 1
+    assert triage_cmd["confidence"] == 1.0
+    assert triage_cmd["requires_workspace_manifest"] is False
+    assert triage_cmd["target_model_tier"] == "fast"
+    assert triage_cmd["token_budget"] == 256
+    assert out_cmd["active_tools"] == []
+
+    # 2. Tier 2 semantic match on rephrased query
+    out_fix = triage(create_initial_graph_state("clean up my codebase and run tests"))
+    triage_fix = out_fix["subgraph_results"]["triage"]
+    assert out_fix["intent"] == INTENT_CODE_TEST_FIX
+    assert triage_fix["triage_intent"] == "CODE_TEST_FIX"
+    assert triage_fix["tier"] == 2
+    assert triage_fix["confidence"] >= 0.82
+    assert triage_fix["requires_workspace_manifest"] is True
+    assert triage_fix["target_model_tier"] == "reasoning"
+    assert triage_fix["token_budget"] == 2048
+    assert triage_fix["latency_ms"] < 30.0
+    assert len(out_fix["active_tools"]) > 0
+
+    # 3. Tier 3 fallback via injected Micro-LLM client on ambiguous input
+    out_ambig = triage(create_initial_graph_state("Can you check on this thing?"))
+    triage_ambig = out_ambig["subgraph_results"]["triage"]
+    assert out_ambig["intent"] == INTENT_CODE_TEST_FIX
+    assert triage_ambig["triage_intent"] == "CODE_TEST_FIX"
+    assert triage_ambig["tier"] == 3
+    assert triage_ambig["confidence"] == 0.92
+    assert triage_ambig["requires_workspace_manifest"] is True
+    assert triage_ambig["target_model_tier"] == "reasoning"
+    assert triage_ambig["token_budget"] == 2048
 
 
 def test_planner_node_approval_gating() -> None:

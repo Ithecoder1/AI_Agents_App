@@ -1,16 +1,18 @@
-"""Modular skill contracts, registry, and built-in orchestrator capabilities."""
+"""Abstract skill contracts, modular implementations, and encapsulated SkillRegistry."""
 
 from __future__ import annotations
 
+from abc import ABC, abstractmethod
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, ClassVar
 
 from app.domain.graph_state import GraphState
 
 
 @dataclass(frozen=True, slots=True)
 class SkillSpec:
-    """Immutable specification of a modular orchestrator capability."""
+    """Immutable, validated specification of a modular orchestrator capability."""
 
     name: str
     description: str
@@ -19,6 +21,16 @@ class SkillSpec:
     recommended_tools: tuple[str, ...] = ()
     system_directive: str = ""
     token_budget_hint: int = 1024
+
+    def __post_init__(self) -> None:
+        if not self.name.strip():
+            raise ValueError("SkillSpec 'name' must not be empty")
+        if not self.description.strip():
+            raise ValueError("SkillSpec 'description' must not be empty")
+        if self.token_budget_hint <= 0:
+            raise ValueError(
+                f"SkillSpec 'token_budget_hint' must be positive, got {self.token_budget_hint!r}"
+            )
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize skill metadata to a JSON-compatible dictionary."""
@@ -33,8 +45,8 @@ class SkillSpec:
         }
 
 
-class OrchestratorSkill:
-    """Modular capability unit dynamically attached to a workflow turn."""
+class BaseOrchestratorSkill(ABC):
+    """Abstract base class standardizing all modular orchestrator skills."""
 
     def __init__(self, spec: SkillSpec) -> None:
         self._spec = spec
@@ -49,7 +61,32 @@ class OrchestratorSkill:
         """Return immutable SkillSpec metadata."""
         return self._spec
 
+    @abstractmethod
+    def can_handle(self, intent: str) -> bool:
+        """Return True if this skill applies to the given orchestration *intent*."""
+        raise NotImplementedError
+
+    @abstractmethod
+    def execute(self, state: GraphState) -> dict[str, Any]:
+        """Apply this skill's state update to *state* and return changed state fields."""
+        raise NotImplementedError
+
     def apply_to_state(self, state: GraphState) -> dict[str, Any]:
+        """Alias delegating to :meth:`execute` for backward-compatible callers."""
+        return self.execute(state)
+
+
+class OrchestratorSkill(BaseOrchestratorSkill):
+    """Standard metadata-backed skill attaching directives and specs to GraphState."""
+
+    def can_handle(self, intent: str) -> bool:
+        """Check whether *intent* matches any configured ``intent_tags``."""
+        normalized = intent.strip().upper()
+        if not normalized:
+            return False
+        return normalized in {tag.strip().upper() for tag in self._spec.intent_tags}
+
+    def execute(self, state: GraphState) -> dict[str, Any]:
         """Attach skill metadata into GraphState subgraph_results without overwriting siblings."""
         active_skills = list(state.get("active_skills") or [])
         if self.name not in active_skills:
@@ -152,28 +189,53 @@ class CodeVerificationSkill(OrchestratorSkill):
 
 
 class SkillRegistry:
-    """In-memory registry of modular orchestrator skills."""
+    """Encapsulated registry of modular orchestrator skills."""
+
+    _default_instance: ClassVar[SkillRegistry | None] = None
 
     def __init__(self) -> None:
-        self._skills: dict[str, OrchestratorSkill] = {}
+        self._skills: dict[str, BaseOrchestratorSkill] = {}
 
-    def register(self, skill: OrchestratorSkill) -> None:
-        """Register or replace an OrchestratorSkill by name."""
+    @classmethod
+    def default(cls) -> SkillRegistry:
+        """Return the lazily populated default SkillRegistry singleton."""
+        if cls._default_instance is None:
+            registry = cls()
+            registry.register(DirectQASkill())
+            registry.register(CodeAnalysisSkill())
+            registry.register(ArchitecturePlanningSkill())
+            registry.register(CodeVerificationSkill())
+            cls._default_instance = registry
+        return cls._default_instance
+
+    @classmethod
+    def reset_default(cls) -> None:
+        """Clear the cached default singleton (useful for isolated tests)."""
+        cls._default_instance = None
+
+    def register(self, skill: BaseOrchestratorSkill) -> None:
+        """Register or replace a skill instance keyed by its canonical name."""
         self._skills[skill.name] = skill
 
-    def get(self, name: str) -> OrchestratorSkill | None:
+    def get(self, name: str) -> BaseOrchestratorSkill | None:
         """Retrieve a registered skill by name, or None if missing."""
         return self._skills.get(name)
 
-    def list_skills(self) -> tuple[OrchestratorSkill, ...]:
+    def list_available(self) -> tuple[BaseOrchestratorSkill, ...]:
         """Return all registered skills in registration order."""
         return tuple(self._skills.values())
 
-    def resolve_for_profile(
-        self, skill_names: tuple[str, ...] | list[str]
-    ) -> list[OrchestratorSkill]:
+    def list_skills(self) -> tuple[BaseOrchestratorSkill, ...]:
+        """Alias for :meth:`list_available`."""
+        return self.list_available()
+
+    def find_for_intent(self, intent: str) -> tuple[BaseOrchestratorSkill, ...]:
+        """Return all registered skills capable of handling *intent*."""
+        return tuple(skill for skill in self._skills.values() if skill.can_handle(intent))
+
+    def resolve_for_profile(self, skill_names: Sequence[str]) -> list[BaseOrchestratorSkill]:
         """Resolve all known skills listed in an execution profile."""
-        resolved: list[OrchestratorSkill] = []
+        resolved: list[BaseOrchestratorSkill] = []
         for name in skill_names:
             skill = self._skills.get(name)
             if skill is not None:
@@ -182,7 +244,7 @@ class SkillRegistry:
 
     def build_tool_query(
         self,
-        skill_names: tuple[str, ...] | list[str],
+        skill_names: Sequence[str],
         fallback_query: str = "",
     ) -> str:
         """Combine JIT tool search terms across all active profile skills."""
@@ -197,7 +259,7 @@ class SkillRegistry:
             return fallback_query.strip()
         return " ".join(terms)
 
-    def collect_directives(self, skill_names: tuple[str, ...] | list[str]) -> str:
+    def collect_directives(self, skill_names: Sequence[str]) -> str:
         """Assemble combined system instructions for all active skills."""
         directives = [
             skill.spec.system_directive
@@ -207,29 +269,13 @@ class SkillRegistry:
         return "\n".join(directives)
 
 
-_DEFAULT_SKILL_REGISTRY: SkillRegistry | None = None
-
-
-def get_default_skill_registry() -> SkillRegistry:
-    """Return the lazily populated default SkillRegistry singleton."""
-    global _DEFAULT_SKILL_REGISTRY
-    if _DEFAULT_SKILL_REGISTRY is None:
-        registry = SkillRegistry()
-        registry.register(DirectQASkill())
-        registry.register(CodeAnalysisSkill())
-        registry.register(ArchitecturePlanningSkill())
-        registry.register(CodeVerificationSkill())
-        _DEFAULT_SKILL_REGISTRY = registry
-    return _DEFAULT_SKILL_REGISTRY
-
-
 __all__ = [
     "ArchitecturePlanningSkill",
+    "BaseOrchestratorSkill",
     "CodeAnalysisSkill",
     "CodeVerificationSkill",
     "DirectQASkill",
     "OrchestratorSkill",
     "SkillRegistry",
     "SkillSpec",
-    "get_default_skill_registry",
 ]

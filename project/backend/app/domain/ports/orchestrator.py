@@ -6,7 +6,7 @@ import asyncio
 from collections.abc import AsyncIterator, Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Protocol, runtime_checkable
+from typing import Any, ClassVar, Protocol, runtime_checkable
 
 from app.domain.graph_state import GraphState
 from app.domain.models import ExecutionTask, StreamEvent
@@ -18,9 +18,48 @@ from app.domain.tools import ToolDescriptor
 class TestRunResult:
     """Structured outcome of an isolated workspace test suite run."""
 
+    __test__: ClassVar[bool] = False
+
     success: bool
     combined_output: str
     clean_traceback: str | None = None
+
+    @classmethod
+    def passed(cls, combined_output: str = "All tests passed.") -> TestRunResult:
+        """Construct a passing test run result."""
+        return cls(success=True, combined_output=combined_output, clean_traceback=None)
+
+    @classmethod
+    def failed(cls, combined_output: str, clean_traceback: str | None = None) -> TestRunResult:
+        """Construct a failing test run result with optional cleaned traceback."""
+        return cls(
+            success=False,
+            combined_output=combined_output,
+            clean_traceback=clean_traceback if clean_traceback is not None else combined_output,
+        )
+
+    @classmethod
+    def timed_out(cls, timeout_s: float) -> TestRunResult:
+        """Construct a timed-out test run result."""
+        msg = f"Test execution timed out after {timeout_s}s"
+        return cls(success=False, combined_output=msg, clean_traceback=msg)
+
+    @property
+    def summary_line(self) -> str:
+        """Return the first non-empty output line or a canonical pass/fail marker."""
+        for line in self.combined_output.splitlines():
+            stripped = line.strip()
+            if stripped:
+                return stripped
+        return "PASSED" if self.success else "FAILED"
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize test run result into a JSON-compatible dictionary."""
+        return {
+            "success": self.success,
+            "combined_output": self.combined_output,
+            "clean_traceback": self.clean_traceback,
+        }
 
 
 @runtime_checkable

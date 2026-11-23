@@ -20,7 +20,7 @@ from app.domain.graph_state import (
 )
 from app.infrastructure.orchestration.state.schema import (
     CompanyState,
-    append_execution_log,
+    ExecutionLogManager,
 )
 
 _REQUIRED_STATE_KEYS: tuple[str, ...] = (
@@ -173,7 +173,7 @@ def determine_next_incomplete_phase(state: GraphState) -> str:
 def hydrate_resumed_state(state: GraphState) -> CompanyState:
     """Hydrate state to resume from the last incomplete phase while preserving GraphState fields."""
     next_phase = determine_next_incomplete_phase(state)
-    updated_logs = append_execution_log(
+    updated_logs = ExecutionLogManager().append_to_logs(
         list(state.get("execution_logs") or []),
         agent="system",
         phase=next_phase,

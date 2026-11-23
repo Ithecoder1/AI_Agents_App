@@ -1,8 +1,9 @@
-"""Unit and contract tests for orchestration domain ports and extracted state package."""
+"""OOP unit and contract tests for orchestration domain ports and state services."""
 
 from __future__ import annotations
 
 import asyncio
+import datetime
 import json
 from collections.abc import AsyncIterator, Mapping
 from dataclasses import FrozenInstanceError
@@ -34,6 +35,7 @@ from app.domain.graph_state import (
     PHASE_DEVOPS,
     PHASE_FAILED,
     PHASE_QA,
+    STATUS_RUNNING,
     GraphState,
     create_initial_graph_state,
 )
@@ -49,20 +51,19 @@ from app.domain.ports import (
 from app.domain.ports.agent_provider import IAgentProvider
 from app.domain.tools import ToolDescriptor
 from app.infrastructure.orchestration import (
-    CompanyState,
+    BaseOrchestratorSkill,
+    CompanyStateFactory,
     ConfigManager,
     ExecutionLogEntry,
+    ExecutionLogManager,
     OrchestratorConfigLoader,
     OrchestratorProfileConfig,
     OrchestratorSkill,
     PlanStep,
     SkillRegistry,
     SkillSpec,
+    TriageProfileResolver,
     TriageSnapshot,
-    append_execution_log,
-    create_initial_state,
-    get_default_skill_registry,
-    resolve_profile_with_triage,
 )
 from company_core import config as legacy_config
 from company_core import skills as legacy_skills
@@ -135,7 +136,7 @@ def _stub_triage_service() -> CascadingTriageService:
     )
 
 
-def test_domain_ports_and_phase_constants_contract() -> None:
+def test_domain_ports_and_rich_test_run_result_contract() -> None:
     assert ALL_PHASES == (
         PHASE_ARCHITECT,
         PHASE_CODER,
@@ -146,10 +147,22 @@ def test_domain_ports_and_phase_constants_contract() -> None:
         PHASE_FAILED,
     )
 
-    res = TestRunResult(success=True, combined_output="1 passed")
-    assert res.clean_traceback is None
+    passed = TestRunResult.passed("2 passed in 0.01s\n")
+    assert passed.success is True
+    assert passed.clean_traceback is None
+    assert passed.summary_line == "2 passed in 0.01s"
+    assert passed.to_dict()["success"] is True
+
+    failed = TestRunResult.failed("FAILED tests/test_x.py", "AssertionError: 1 != 2")
+    assert failed.success is False
+    assert failed.clean_traceback == "AssertionError: 1 != 2"
+
+    timed_out = TestRunResult.timed_out(5.0)
+    assert timed_out.success is False
+    assert "5.0s" in (timed_out.clean_traceback or "")
+
     with pytest.raises(FrozenInstanceError):
-        res.success = False  # type: ignore[misc]
+        passed.success = False  # type: ignore[misc]
 
     class _TurnStub:
         async def stream_turn(
@@ -242,7 +255,7 @@ def test_domain_ports_and_phase_constants_contract() -> None:
 
         def run_tests(self, target_dir: Path, timeout_s: float = 30.0) -> TestRunResult:
             _ = (target_dir, timeout_s)
-            return TestRunResult(success=True, combined_output="ok")
+            return TestRunResult.passed("ok")
 
     assert isinstance(_TurnStub(), ITurnOrchestrator)
     assert isinstance(_EngineStub(), IOrchestratorEngine)
@@ -251,56 +264,86 @@ def test_domain_ports_and_phase_constants_contract() -> None:
     assert isinstance(OrchestratorConfigLoader(), IProfileClassifier)
 
 
-def test_schema_payload_models_and_initial_state() -> None:
-    log = ExecutionLogEntry(
-        timestamp="2026-01-01T00:00:00Z",
+def test_rich_payload_models_log_manager_and_state_factory() -> None:
+    fixed_dt = datetime.datetime(2026, 1, 1, 12, 0, 0, tzinfo=datetime.timezone.utc)
+    log_manager = ExecutionLogManager(clock=lambda: fixed_dt)
+    factory = CompanyStateFactory(log_manager=log_manager)
+
+    entry = log_manager.create_entry(
         agent="triage",
         phase=PHASE_ARCHITECT,
         message="Classified",
         details={"tier": 1},
     )
-    assert log.to_dict() == {
-        "timestamp": "2026-01-01T00:00:00Z",
+    assert entry.to_dict() == {
+        "timestamp": "2026-01-01T12:00:00+00:00",
         "agent": "triage",
         "phase": PHASE_ARCHITECT,
         "message": "Classified",
         "details": {"tier": 1},
     }
+    hydrated_entry = ExecutionLogEntry.from_dict(entry.to_dict())
+    assert hydrated_entry == entry
 
-    step = PlanStep(step=1, action="architect_subgraph", description="Build blueprint")
+    with pytest.raises(ValueError, match="agent"):
+        ExecutionLogEntry.create(agent="  ", phase=PHASE_ARCHITECT, message="Invalid")
+    with pytest.raises(ValueError, match="phase"):
+        ExecutionLogEntry.create(agent="triage", phase="", message="Invalid")
+
+    step = PlanStep.from_dict({"step": 1, "action": "architect_subgraph", "description": "Design"})
     assert step.to_dict() == {
         "step": 1,
         "action": "architect_subgraph",
-        "description": "Build blueprint",
+        "description": "Design",
     }
+    with pytest.raises(ValueError, match="step"):
+        PlanStep(step=0, action="x", description="y")
 
-    snap = TriageSnapshot(
-        intent=INTENT_DIRECT_QA,
-        triage_intent="DIRECT_QA",
-        confidence=0.951234,
-        tier=2,
-        requires_workspace_manifest=False,
-        target_model_tier="fast",
-        token_budget=512,
-        latency_ms=1.23456,
-        task_type="DIRECT_QA",
-        is_lightweight=False,
-        fast_path=True,
-        active_skills=("direct_qa",),
-        subgraphs=(),
+    loader = OrchestratorConfigLoader()
+    decision = _stub_triage_service().triage("hi")
+    snap = TriageSnapshot.from_classification(
+        profile=loader.get_profile(INTENT_DIRECT_QA),
+        decision=decision,
+        active_skills=["direct_qa"],
         tools_count=0,
     )
     snap_dict = snap.to_dict()
-    assert snap_dict["confidence"] == 0.9512
-    assert snap_dict["latency_ms"] == 1.235
+    assert snap_dict["is_lightweight"] is True
     assert snap_dict["active_skills"] == ["direct_qa"]
+    with pytest.raises(ValueError, match="confidence"):
+        TriageSnapshot(
+            intent=INTENT_DIRECT_QA,
+            triage_intent="DIRECT_QA",
+            confidence=1.5,
+            tier=1,
+            requires_workspace_manifest=False,
+            target_model_tier="fast",
+            token_budget=512,
+            latency_ms=0.1,
+            task_type="DIRECT_QA",
+            is_lightweight=True,
+            fast_path=True,
+            active_skills=("direct_qa",),
+            subgraphs=(),
+            tools_count=0,
+        )
 
-    state = create_initial_state("  Build service  ", project_id="p1")
+    state = factory.create_initial_state("  Build service  ", project_id="p1")
     assert state["user_requirement"] == "Build service"
     assert state["current_phase"] == PHASE_ARCHITECT
-    updated_logs = append_execution_log(state["execution_logs"], "ceo", PHASE_CODER, "Next")
-    assert len(updated_logs) == 2
-    assert updated_logs[1]["agent"] == "ceo"
+    assert state["execution_logs"][0]["timestamp"] == "2026-01-01T12:00:00+00:00"
+
+    original_len = len(state["execution_logs"])
+    updated_logs = log_manager.append(
+        state,
+        node_name="triage_node",
+        status=STATUS_RUNNING,
+        details={"tier": 2},
+    )
+    assert len(state["execution_logs"]) == original_len
+    assert len(updated_logs) == original_len + 1
+    assert updated_logs[-1]["agent"] == "triage_node"
+    assert updated_logs[-1]["details"] == {"status": STATUS_RUNNING, "tier": 2}
 
 
 def test_config_loader_discovers_repo_yaml_from_any_cwd_and_custom_rules(
@@ -308,12 +351,14 @@ def test_config_loader_discovers_repo_yaml_from_any_cwd_and_custom_rules(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.chdir(tmp_path)
-    loader = OrchestratorConfigLoader()
+    OrchestratorConfigLoader.reset_default()
+    loader = OrchestratorConfigLoader.default()
     assert loader.workflow.max_retries >= 1
     assert loader.get_agent("coder").role == "Senior Software Engineer"
     assert loader.get_profile("ARCHITECTURE").intent == INTENT_ARCHITECTURE_DESIGN
     assert loader.get_profile("FULL_PIPELINE").intent == INTENT_COMPLEX_PIPELINE
     assert loader.get_profile("UNKNOWN_INTENT").intent == INTENT_COMPLEX_PIPELINE
+    OrchestratorConfigLoader.reset_default()
 
     custom_profiles = tmp_path / "orchestrator_profiles.yaml"
     custom_profiles.write_text(
@@ -348,10 +393,14 @@ def test_config_loader_discovers_repo_yaml_from_any_cwd_and_custom_rules(
     assert profile.intent == INTENT_DIRECT_QA
 
 
-def test_skill_registry_and_triage_bridge_mapping() -> None:
-    registry = get_default_skill_registry()
-    resolved = registry.resolve_for_profile(["architecture_planning", "missing", "code_analysis"])
-    assert [skill.name for skill in resolved] == ["architecture_planning", "code_analysis"]
+def test_skill_registry_oop_contracts_and_triage_profile_resolver() -> None:
+    SkillRegistry.reset_default()
+    registry = SkillRegistry.default()
+    assert len(registry.list_available()) == 4
+    assert all(isinstance(skill, BaseOrchestratorSkill) for skill in registry.list_available())
+
+    arch_matches = registry.find_for_intent(INTENT_ARCHITECTURE_DESIGN)
+    assert [s.name for s in arch_matches] == ["architecture_planning"]
     assert "architecture" in registry.build_tool_query(["architecture_planning"])
     assert registry.build_tool_query(["unknown"], fallback_query=" grep ") == "grep"
     assert "Hexagonal/Clean Architecture" in registry.collect_directives(["architecture_planning"])
@@ -364,51 +413,68 @@ def test_skill_registry_and_triage_bridge_mapping() -> None:
             intent_tags=("DIRECT_QA",),
         )
     )
+    assert custom_skill.can_handle("direct_qa") is True
+    assert custom_skill.can_handle("CODE_TEST_FIX") is False
+
     custom_reg.register(custom_skill)
     assert custom_reg.get("custom_skill") is custom_skill
-    assert custom_reg.list_skills() == (custom_skill,)
+    assert custom_reg.list_available() == (custom_skill,)
 
     state = create_initial_graph_state("test")
-    state_update = custom_skill.apply_to_state(state)
+    state_update = custom_skill.execute(state)
     assert state_update["active_skills"] == ["custom_skill"]
     assert "custom_skill" in state_update["subgraph_results"]["skills_applied"]
 
-    profiles = OrchestratorConfigLoader().profiles
+    loader = OrchestratorConfigLoader()
     svc = _stub_triage_service()
+    resolver = TriageProfileResolver(loader, triage_service=svc, skill_registry=registry)
 
-    p_qa, d_qa = resolve_profile_with_triage("hi", profiles, triage_service=svc)
+    p_qa, d_qa = resolver.classify_and_resolve("hi")
     assert p_qa.intent == INTENT_DIRECT_QA and d_qa.tier == 1
+    assert resolver.refine_profile_skills(p_qa, INTENT_DIRECT_QA) == ("direct_qa",)
 
-    p_focused, _ = resolve_profile_with_triage(
-        "Analyze codebase structure", profiles, triage_service=svc
-    )
+    p_focused, _ = resolver.classify_and_resolve("Analyze codebase structure")
     assert p_focused.intent == INTENT_FOCUSED_TOOL_TASK
 
-    p_arch, _ = resolve_profile_with_triage(
-        "Design system architecture blueprint", profiles, triage_service=svc
-    )
+    p_arch, _ = resolver.classify_and_resolve("Design system architecture blueprint")
     assert p_arch.intent == INTENT_ARCHITECTURE_DESIGN
 
-    p_fix, _ = resolve_profile_with_triage("Fix broken auth test", profiles, triage_service=svc)
+    p_fix, _ = resolver.classify_and_resolve("Fix broken auth test")
     assert p_fix.intent == INTENT_CODE_TEST_FIX
 
-    p_build, _ = resolve_profile_with_triage(
-        "Build a microservice from scratch", profiles, triage_service=svc
-    )
+    p_build, _ = resolver.classify_and_resolve("Build a microservice from scratch")
     assert p_build.intent == INTENT_COMPLEX_PIPELINE
 
-    p_light, d_light = resolve_profile_with_triage(
-        "Build a microservice from scratch", profiles, triage_service=svc, is_lightweight=True
+    p_light, d_light = resolver.classify_and_resolve(
+        "Build a microservice from scratch", is_lightweight=True
     )
     assert p_light.intent == INTENT_DIRECT_QA
     assert d_light.matched_route == "tier1_lightweight_override"
 
+    # Unregistered skills on a synthetic profile fall back via refine_profile_skills
+    synthetic = OrchestratorProfileConfig(
+        intent=INTENT_CODE_TEST_FIX,
+        task_type="CODE_TEST_FIX",
+        skills=("nonexistent_skill",),
+    )
+    assert resolver.refine_profile_skills(synthetic, INTENT_CODE_TEST_FIX) == ("code_verification",)
 
-def test_legacy_company_core_shims_preserve_identity_parity() -> None:
+
+def test_legacy_company_core_shims_delegate_to_oop_services() -> None:
     assert legacy_config.ConfigManager is ConfigManager
     assert legacy_config.OrchestratorProfileConfig is OrchestratorProfileConfig
-    assert legacy_state.CompanyState is CompanyState
-    assert legacy_state.create_initial_state is create_initial_state
+    assert legacy_config.get_config == OrchestratorConfigLoader.default
+    assert legacy_config.get_config() is OrchestratorConfigLoader.default()
+    assert legacy_state.ExecutionLogManager is ExecutionLogManager
+    assert legacy_state.CompanyStateFactory is CompanyStateFactory
     assert legacy_skills.SkillRegistry is SkillRegistry
-    assert legacy_skills.SkillSpec is SkillSpec
-    assert legacy_skills.get_default_skill_registry is get_default_skill_registry
+    assert legacy_skills.BaseOrchestratorSkill is BaseOrchestratorSkill
+    assert legacy_skills.get_default_skill_registry == SkillRegistry.default
+    assert legacy_skills.get_default_skill_registry() is SkillRegistry.default()
+
+    initial = legacy_state.create_initial_state("Test shim", project_id="shim-1")
+    assert initial["project_id"] == "shim-1"
+    logs = legacy_state.append_execution_log(
+        initial["execution_logs"], agent="qa", phase=PHASE_QA, message="Verified"
+    )
+    assert len(logs) == 2

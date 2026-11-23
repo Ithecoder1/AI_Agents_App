@@ -46,6 +46,8 @@ packages = [
     "app.infrastructure.artifacts",
     "app.infrastructure.config",
     "app.infrastructure.eventing",
+    "app.infrastructure.orchestration",
+    "app.infrastructure.orchestration.state",
     "app.infrastructure.persistence",
     "app.infrastructure.persistence.migrations",
     "app.infrastructure.persistence.migrations.versions",

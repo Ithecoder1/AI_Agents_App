@@ -63,6 +63,13 @@
     },
     "triage": {
       "intent": "COMPLEX_PIPELINE",
+      "triage_intent": "ARCHITECT_PIPELINE",
+      "confidence": 0.6,
+      "tier": 3,
+      "requires_workspace_manifest": true,
+      "target_model_tier": "reasoning",
+      "token_budget": 4096,
+      "latency_ms": 18.776,
       "task_type": "FULL_PIPELINE",
       "is_lightweight": false,
       "fast_path": false,
@@ -108,18 +115,25 @@
   },
   "execution_logs": [
     {
-      "timestamp": "2026-11-17T12:37:17.642036+00:00",
+      "timestamp": "2026-11-23T10:00:14.325496+00:00",
       "agent": "system",
       "phase": "INITIALIZATION",
       "message": "Initialized graph session 'sess-master-e2e' for project 'master-e2e' with requirement: 'solve: 1+1 arithmetic evaluator'"
     },
     {
-      "timestamp": "2026-11-17T12:37:17.645959+00:00",
+      "timestamp": "2026-11-23T10:00:14.350326+00:00",
       "agent": "ceo_triage",
       "phase": "ARCHITECT",
-      "message": "Triage: Classified intent='COMPLEX_PIPELINE' (task_type='FULL_PIPELINE', Lightweight=False, fast_path=False).",
+      "message": "Triage: Classified intent='COMPLEX_PIPELINE' (task_type='FULL_PIPELINE', tier=3, confidence=0.600, fast_path=False).",
       "details": {
         "intent": "COMPLEX_PIPELINE",
+        "triage_intent": "ARCHITECT_PIPELINE",
+        "confidence": 0.6,
+        "tier": 3,
+        "requires_workspace_manifest": true,
+        "target_model_tier": "reasoning",
+        "token_budget": 4096,
+        "latency_ms": 18.776,
         "task_type": "FULL_PIPELINE",
         "is_lightweight": false,
         "fast_path": false,
@@ -136,7 +150,7 @@
       }
     },
     {
-      "timestamp": "2026-11-17T12:37:17.647937+00:00",
+      "timestamp": "2026-11-23T10:00:14.351323+00:00",
       "agent": "ceo_planner",
       "phase": "ARCHITECT",
       "message": "Planner: Synthesized 3-step plan for profile 'COMPLEX_PIPELINE'.",
@@ -163,7 +177,7 @@
       }
     },
     {
-      "timestamp": "2026-11-17T12:37:17.649942+00:00",
+      "timestamp": "2026-11-23T10:00:14.353229+00:00",
       "agent": "subgraph_router",
       "phase": "ARCHITECT",
       "message": "Router: Dispatching workflow for intent='COMPLEX_PIPELINE' (completed=[]).",
@@ -174,7 +188,7 @@
       }
     },
     {
-      "timestamp": "2026-11-17T12:37:17.653938+00:00",
+      "timestamp": "2026-11-23T10:00:14.360568+00:00",
       "agent": "architect",
       "phase": "ARCHITECT",
       "message": "Architect: Parsed requirements for domain 'arithmetic_evaluator'.",
@@ -189,7 +203,7 @@
       }
     },
     {
-      "timestamp": "2026-11-17T12:37:17.655232+00:00",
+      "timestamp": "2026-11-23T10:00:14.363566+00:00",
       "agent": "architect",
       "phase": "ARCHITECT",
       "message": "Architect: Generated architecture specification and module layout.",
@@ -198,7 +212,7 @@
       }
     },
     {
-      "timestamp": "2026-11-17T12:37:17.657681+00:00",
+      "timestamp": "2026-11-23T10:00:14.364563+00:00",
       "agent": "architect",
       "phase": "ARCHITECT",
       "message": "Architect: Validated architecture blueprint schemas and contracts.",
@@ -207,7 +221,7 @@
       }
     },
     {
-      "timestamp": "2026-11-17T12:37:17.678264+00:00",
+      "timestamp": "2026-11-23T10:00:14.391219+00:00",
       "agent": "coder",
       "phase": "CODER",
       "message": "Coder: Implemented core source files and test fixtures.",
@@ -222,7 +236,7 @@
       }
     },
     {
-      "timestamp": "2026-11-17T12:37:17.682263+00:00",
+      "timestamp": "2026-11-23T10:00:14.396189+00:00",
       "agent": "devops",
       "phase": "DEVOPS",
       "message": "DevOps: Configured requirements.txt, pytest.ini, and test execution harness.",
@@ -234,13 +248,13 @@
       }
     },
     {
-      "timestamp": "2026-11-17T12:37:17.682263+00:00",
+      "timestamp": "2026-11-23T10:00:14.396189+00:00",
       "agent": "devops",
       "phase": "DEVOPS",
       "message": "DevOps: Configured requirements.txt and pytest execution harness."
     },
     {
-      "timestamp": "2026-11-17T12:37:20.521524+00:00",
+      "timestamp": "2026-11-23T10:00:16.508390+00:00",
       "agent": "qa",
       "phase": "QA",
       "message": "QA: All automated tests PASSED successfully.",

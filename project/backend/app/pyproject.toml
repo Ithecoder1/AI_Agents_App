@@ -47,6 +47,8 @@ packages = [
     "app.infrastructure.config",
     "app.infrastructure.eventing",
     "app.infrastructure.orchestration",
+    "app.infrastructure.orchestration.adapters",
+    "app.infrastructure.orchestration.persistence",
     "app.infrastructure.orchestration.state",
     "app.infrastructure.persistence",
     "app.infrastructure.persistence.migrations",

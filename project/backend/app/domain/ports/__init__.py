@@ -4,6 +4,14 @@ from app.domain.ports.agent_provider import IAgentProvider, ProviderDeps, Provid
 from app.domain.ports.artifacts import ArtifactStore
 from app.domain.ports.chat import ChatRepository
 from app.domain.ports.events import EventBus, EventStore
+from app.domain.ports.orchestrator import (
+    ICodeWorkspaceRunner,
+    IOrchestratorCheckpointer,
+    IOrchestratorEngine,
+    IProfileClassifier,
+    ITurnOrchestrator,
+    TestRunResult,
+)
 from app.domain.ports.queue import TaskQueue
 from app.domain.ports.repositories import PromptRepository, TaskRepository
 from app.domain.ports.secrets import SecretResolver
@@ -15,11 +23,17 @@ __all__ = [
     "EventBus",
     "EventStore",
     "IAgentProvider",
+    "ICodeWorkspaceRunner",
     "IManifestParser",
+    "IOrchestratorCheckpointer",
+    "IOrchestratorEngine",
+    "IProfileClassifier",
+    "ITurnOrchestrator",
     "PromptRepository",
     "ProviderDeps",
     "ProviderFactory",
     "SecretResolver",
     "TaskQueue",
     "TaskRepository",
+    "TestRunResult",
 ]

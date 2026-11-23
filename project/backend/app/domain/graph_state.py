@@ -49,6 +49,34 @@ ALL_GRAPH_STATUSES = (
     STATUS_FAILED,
 )
 
+GraphPhase = Literal[
+    "ARCHITECT",
+    "CODER",
+    "DEVOPS",
+    "QA",
+    "DECOMPOSE",
+    "COMPLETED",
+    "FAILED",
+]
+
+PHASE_ARCHITECT: GraphPhase = "ARCHITECT"
+PHASE_CODER: GraphPhase = "CODER"
+PHASE_DEVOPS: GraphPhase = "DEVOPS"
+PHASE_QA: GraphPhase = "QA"
+PHASE_DECOMPOSE: GraphPhase = "DECOMPOSE"
+PHASE_COMPLETED: GraphPhase = "COMPLETED"
+PHASE_FAILED: GraphPhase = "FAILED"
+
+ALL_PHASES: tuple[GraphPhase, ...] = (
+    PHASE_ARCHITECT,
+    PHASE_CODER,
+    PHASE_DEVOPS,
+    PHASE_QA,
+    PHASE_DECOMPOSE,
+    PHASE_COMPLETED,
+    PHASE_FAILED,
+)
+
 
 class GraphState(TypedDict, total=False):
     """Global State Schema for Master Graph and Sub-Graphs."""

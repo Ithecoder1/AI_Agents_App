@@ -48,6 +48,8 @@ packages = [
     "app.infrastructure.eventing",
     "app.infrastructure.orchestration",
     "app.infrastructure.orchestration.adapters",
+    "app.infrastructure.orchestration.graph",
+    "app.infrastructure.orchestration.nodes",
     "app.infrastructure.orchestration.persistence",
     "app.infrastructure.orchestration.state",
     "app.infrastructure.orchestration.subgraphs",

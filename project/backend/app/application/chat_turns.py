@@ -49,6 +49,7 @@ from app.domain.errors import (
 from app.domain.models import ExecutionParams, ExecutionTask, Prompt, StreamEvent
 from app.domain.ports.agent_provider import IAgentProvider
 from app.domain.ports.chat import ChatRepository
+from app.domain.ports.orchestrator import ITurnOrchestrator
 from app.domain.tools import ToolDescriptor
 
 __all__ = ["ChatTurnService", "StartedTurn", "TurnStream"]
@@ -79,6 +80,7 @@ class ChatTurnService:
         workspaces: WorkspaceManager,
         context_builder: ConversationContextBuilder | None = None,
         tool_registry: DynamicToolRegistry | None = None,
+        turn_orchestrator: ITurnOrchestrator | None = None,
         *,
         flush_interval_s: float = 0.5,
         retain_finished: int = 50,
@@ -88,6 +90,7 @@ class ChatTurnService:
         self._registry = registry
         self._workspaces = workspaces
         self._tools = tool_registry
+        self._turn_orchestrator = turn_orchestrator
         self._context = context_builder or ConversationContextBuilder()
         self._flush_interval_s = flush_interval_s
         self._retain_finished = retain_finished
@@ -373,18 +376,23 @@ class ChatTurnService:
         status = STATUS_COMPLETE
         error: dict[str, Any] | None = None
         try:
-            from company_core.turn_orchestrator import GraphTurnOrchestrator
-
-            orchestrator = GraphTurnOrchestrator(tool_registry=self._tools)
             require_approval = bool(active.task.params.extra.get("require_approval", False))
+            event_stream = (
+                self._turn_orchestrator.stream_turn(
+                    active.task,
+                    active.provider,
+                    require_approval=require_approval,
+                    approval_event=active.approval_event,
+                    cancel_event=active.cancel_event,
+                )
+                if self._turn_orchestrator is not None
+                else active.provider.stream_execute(
+                    active.task,
+                    active_tools=tuple(active.task.params.active_tools),
+                )
+            )
 
-            async for event in orchestrator.stream_turn(
-                active.task,
-                active.provider,
-                require_approval=require_approval,
-                approval_event=active.approval_event,
-                cancel_event=active.cancel_event,
-            ):
+            async for event in event_stream:
                 boundary = aggregator.apply(event)
                 if event.type is EventType.DONE:
                     continue  # published after the message is durably finalised

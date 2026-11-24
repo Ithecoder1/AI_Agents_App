@@ -6,8 +6,11 @@ from app.domain.ports.chat import ChatRepository
 from app.domain.ports.events import EventBus, EventStore
 from app.domain.ports.orchestrator import (
     ICodeWorkspaceRunner,
+    IMermaidWorkflowVisualizer,
+    INodeEventMapper,
     IOrchestratorCheckpointer,
     IOrchestratorEngine,
+    IOrchestratorEngineFactory,
     IProfileClassifier,
     ITurnOrchestrator,
     TestRunResult,
@@ -25,8 +28,11 @@ __all__ = [
     "IAgentProvider",
     "ICodeWorkspaceRunner",
     "IManifestParser",
+    "IMermaidWorkflowVisualizer",
+    "INodeEventMapper",
     "IOrchestratorCheckpointer",
     "IOrchestratorEngine",
+    "IOrchestratorEngineFactory",
     "IProfileClassifier",
     "ITurnOrchestrator",
     "PromptRepository",

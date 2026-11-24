@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass, field
-from typing import Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 from app.domain.models import (
     AgentProviderConfig,
@@ -17,6 +17,14 @@ from app.domain.models import (
 )
 from app.domain.ports.secrets import SecretResolver
 from app.domain.tools import ToolDescriptor, ToolRetrievalPolicy
+
+if TYPE_CHECKING:
+    from app.domain.ports.orchestrator import (
+        IMermaidWorkflowVisualizer,
+        INodeEventMapper,
+        IOrchestratorEngine,
+        IOrchestratorEngineFactory,
+    )
 
 
 @runtime_checkable
@@ -71,6 +79,10 @@ class ProviderDeps:
 
     secrets: SecretResolver
     logger: logging.Logger = field(default_factory=lambda: logging.getLogger("app.provider"))
+    orchestrator_engine: IOrchestratorEngine | None = None
+    orchestrator_engine_factory: IOrchestratorEngineFactory | None = None
+    mermaid_visualizer: IMermaidWorkflowVisualizer | None = None
+    node_event_mapper_factory: Callable[[], INodeEventMapper] | None = None
 
 
 # A provider factory is any callable ``(config, deps) -> IAgentProvider``: a class whose

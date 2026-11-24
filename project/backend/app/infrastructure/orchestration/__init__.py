@@ -5,6 +5,12 @@ from app.infrastructure.orchestration.adapters import (
     PytestSubprocessRunner,
     WorkspaceFileManager,
 )
+from app.infrastructure.orchestration.engine import (
+    OrchestratorDependencies,
+    OrchestratorEngine,
+    OrchestratorEngineFactory,
+)
+from app.infrastructure.orchestration.event_mapper import StartupNodeEventMapper
 from app.infrastructure.orchestration.graph import (
     MasterGraphBuilder,
     MasterGraphRouter,
@@ -16,6 +22,7 @@ from app.infrastructure.orchestration.graph import (
     route_after_router,
     route_after_triage,
 )
+from app.infrastructure.orchestration.mermaid import MermaidWorkflowVisualizer
 from app.infrastructure.orchestration.nodes import (
     ExecutorNode,
     PlannerNode,
@@ -63,6 +70,9 @@ from app.infrastructure.orchestration.subgraphs import (
     TaskDecompositionStrategy,
     TestResultEvaluator,
 )
+from app.infrastructure.orchestration.turn_service import TurnOrchestratorService
+
+compile_orchestrator_graph = compile_master_graph
 
 __all__ = [
     "ArchitectSubGraphBuilder",
@@ -90,7 +100,11 @@ __all__ = [
     "LocalCodeWorkspaceRunner",
     "MasterGraphBuilder",
     "MasterGraphRouter",
+    "MermaidWorkflowVisualizer",
     "OrchestratorConfigLoader",
+    "OrchestratorDependencies",
+    "OrchestratorEngine",
+    "OrchestratorEngineFactory",
     "OrchestratorProfileConfig",
     "OrchestratorSkill",
     "PlanStep",
@@ -102,15 +116,18 @@ __all__ = [
     "SchemaValidatorNode",
     "SkillRegistry",
     "SkillSpec",
+    "StartupNodeEventMapper",
     "TaskDecomposerNode",
     "TaskDecompositionStrategy",
     "TestResultEvaluator",
     "TriageNode",
     "TriageProfileResolver",
     "TriageSnapshot",
+    "TurnOrchestratorService",
     "WorkspaceFileManager",
     "build_master_graph",
     "compile_master_graph",
+    "compile_orchestrator_graph",
     "route_after_architect",
     "route_after_coder_qa",
     "route_after_planner",

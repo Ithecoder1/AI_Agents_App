@@ -1,6 +1,11 @@
-"""Autonomous Startup Multi-Agent Core Engine."""
+"""DEPRECATED: Legacy Autonomous Startup Multi-Agent Core compatibility package.
+
+Prefer ``app.domain.ports`` and ``app.infrastructure.orchestration`` for new code.
+"""
 
 from __future__ import annotations
+
+__deprecated__ = True
 
 from company_core.agents import (
     BaseCompanyAgent,

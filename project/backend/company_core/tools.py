@@ -1,6 +1,11 @@
-"""Backward-compatibility shim for local workspace execution tools."""
+"""DEPRECATED: Compatibility shim for local workspace execution tools.
+
+Prefer ``app.infrastructure.orchestration.LocalCodeWorkspaceRunner``.
+"""
 
 from __future__ import annotations
+
+__deprecated__ = True
 
 from collections.abc import Mapping
 from pathlib import Path

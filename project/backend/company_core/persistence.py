@@ -1,6 +1,11 @@
-"""Backward-compatibility shim for persistence and resumability helpers."""
+"""DEPRECATED: Compatibility shim for persistence and resumability helpers.
+
+Prefer ``app.infrastructure.orchestration.GraphStateHydrator`` and ``JsonStateCheckpointer``.
+"""
 
 from __future__ import annotations
+
+__deprecated__ = True
 
 from pathlib import Path
 

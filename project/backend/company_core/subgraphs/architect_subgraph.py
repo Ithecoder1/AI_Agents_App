@@ -1,6 +1,11 @@
-"""Backward-compatibility shim for the OOP Architecture Design sub-graph."""
+"""DEPRECATED: Compatibility shim for the OOP Architecture Design sub-graph.
+
+Prefer ``app.infrastructure.orchestration.ArchitectSubGraphBuilder``.
+"""
 
 from __future__ import annotations
+
+__deprecated__ = True
 
 from typing import Any, cast
 

@@ -1,10 +1,11 @@
-"""Autonomous Startup Orchestrator Engine.
+"""DEPRECATED: Legacy Autonomous Startup Orchestrator Engine compatibility wrapper.
 
-Encapsulates LangGraph workflow assembly, multi-agent coordination, state persistence,
-and real-time execution streaming.
+Prefer ``app.infrastructure.orchestration.OrchestratorEngine`` and ``IOrchestratorEngine``.
 """
 
 from __future__ import annotations
+
+__deprecated__ = True
 
 import asyncio
 from collections.abc import AsyncIterator, Callable

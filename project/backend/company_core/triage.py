@@ -1,6 +1,11 @@
-"""Backward-compatibility shim bridging CascadingTriageService with Orchestrator profiles."""
+"""DEPRECATED: Compatibility shim bridging CascadingTriageService with Orchestrator profiles.
+
+Prefer ``app.infrastructure.orchestration.TriageProfileResolver``.
+"""
 
 from __future__ import annotations
+
+__deprecated__ = True
 
 from collections.abc import Mapping
 from typing import TYPE_CHECKING

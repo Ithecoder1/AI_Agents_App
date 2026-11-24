@@ -1,38 +1,49 @@
-"""LangGraph checkpointer mirroring atomic JSON snapshots without blocking async loops."""
+"""Non-blocking JSON-backed LangGraph checkpointer delegating to GraphStateHydrator."""
 
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Mapping
 from pathlib import Path
 from typing import cast
 
 from langchain_core.runnables import RunnableConfig
-from langgraph.checkpoint.base import (
-    ChannelVersions,
-    Checkpoint,
-    CheckpointMetadata,
-)
+from langgraph.checkpoint.base import ChannelVersions, Checkpoint, CheckpointMetadata
 from langgraph.checkpoint.memory import MemorySaver
 
-from app.domain.graph_state import GraphState
-from app.infrastructure.orchestration.persistence.hydration import (
-    _default_log_path,
-    can_resume,
-    hydrate_resumed_state,
-    load_graph_state,
-    save_graph_state,
-)
-from app.infrastructure.orchestration.state.schema import CompanyState
+from app.infrastructure.orchestration.persistence.hydration import GraphStateHydrator
+from app.infrastructure.orchestration.state import GraphState
 
 
 class JsonStateCheckpointer(MemorySaver):
-    """LangGraph checkpointer mirroring step snapshots to JSON and implementing the port."""
+    """LangGraph ``MemorySaver`` persisting atomic JSON snapshots via ``GraphStateHydrator``.
 
-    def __init__(self, log_path: Path | str | None = None) -> None:
+    Implements ``IOrchestratorCheckpointer`` and offloads async disk I/O in ``aput``
+    through ``asyncio.to_thread`` to keep the asyncio event loop non-blocking.
+    """
+
+    def __init__(
+        self,
+        log_path: Path | str | None = None,
+        *,
+        hydrator: GraphStateHydrator | None = None,
+    ) -> None:
         super().__init__()
-        self.log_path = Path(log_path) if log_path else _default_log_path()
+        self._hydrator = hydrator if hydrator is not None else GraphStateHydrator()
+        self.log_path: Path = (
+            Path(log_path) if log_path is not None else self._hydrator.default_log_path()
+        )
 
-    # -- LangGraph BaseCheckpointSaver hooks ------------------------------- #
+    @property
+    def hydrator(self) -> GraphStateHydrator:
+        """Return the ``GraphStateHydrator`` used for serialization and resumption."""
+        return self._hydrator
+
+    def _write_snapshot(self, checkpoint: Checkpoint) -> None:
+        channel_values = checkpoint.get("channel_values")
+        if isinstance(channel_values, Mapping) and "project_id" in channel_values:
+            self._hydrator.save(cast("GraphState", dict(channel_values)), self.log_path)
+
     def put(
         self,
         config: RunnableConfig,
@@ -40,9 +51,10 @@ class JsonStateCheckpointer(MemorySaver):
         metadata: CheckpointMetadata,
         new_versions: ChannelVersions,
     ) -> RunnableConfig:
-        res = super().put(config, checkpoint, metadata, new_versions)
+        """Persist checkpoint in memory and flush JSON snapshot synchronously."""
+        updated = super().put(config, checkpoint, metadata, new_versions)
         self._write_snapshot(checkpoint)
-        return res
+        return updated
 
     async def aput(
         self,
@@ -51,39 +63,28 @@ class JsonStateCheckpointer(MemorySaver):
         metadata: CheckpointMetadata,
         new_versions: ChannelVersions,
     ) -> RunnableConfig:
-        res = await super().aput(config, checkpoint, metadata, new_versions)
+        """Persist checkpoint in memory and offload JSON snapshot writes to a thread pool."""
+        updated = await super().aput(config, checkpoint, metadata, new_versions)
         await asyncio.to_thread(self._write_snapshot, checkpoint)
-        return res
+        return updated
 
-    def _write_snapshot(self, checkpoint: Checkpoint) -> None:
-        channel_values = checkpoint.get("channel_values", {})
-        state_candidate = None
-        if "company_state" in channel_values:
-            state_candidate = channel_values["company_state"]
-        elif channel_values and any(k in channel_values for k in ("project_id", "current_phase")):
-            state_candidate = channel_values
-
-        if isinstance(state_candidate, dict) and "project_id" in state_candidate:
-            save_graph_state(cast(GraphState, state_candidate), self.log_path)
-
-    # -- IOrchestratorCheckpointer port methods ---------------------------- #
     def save(self, state: GraphState, filepath: Path | str | None = None) -> Path:
-        """Persist *state* to *filepath* or this checkpointer's configured ``log_path``."""
+        """Save ``state`` to ``filepath`` (or ``self.log_path``) atomically."""
         target = filepath if filepath is not None else self.log_path
-        return save_graph_state(state, target)
+        return self._hydrator.save(state, target)
 
-    def load(self, filepath: Path | str | None = None) -> CompanyState | None:
-        """Load persisted state from *filepath* or this checkpointer's ``log_path``."""
+    def load(self, filepath: Path | str | None = None) -> GraphState | None:
+        """Load ``GraphState`` from ``filepath`` (or ``self.log_path``)."""
         target = filepath if filepath is not None else self.log_path
-        return load_graph_state(target)
+        return self._hydrator.load(target)
 
     def can_resume(self, state: GraphState | None) -> bool:
-        """Return True if *state* represents an incomplete execution."""
-        return can_resume(state)
+        """Delegate resumability evaluation to the configured hydrator."""
+        return self._hydrator.can_resume(state)
 
-    def hydrate(self, state: GraphState) -> CompanyState:
-        """Hydrate *state* to resume from the next incomplete phase."""
-        return hydrate_resumed_state(state)
+    def hydrate(self, state: GraphState) -> GraphState:
+        """Delegate state resumption hydration to the configured hydrator."""
+        return self._hydrator.hydrate(state)
 
 
 __all__ = ["JsonStateCheckpointer"]

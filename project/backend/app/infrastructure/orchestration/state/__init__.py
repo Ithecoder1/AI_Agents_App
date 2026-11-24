@@ -1,4 +1,4 @@
-"""State schema, YAML profile loader, modular skills, and triage bridge."""
+"""Object-oriented orchestration state schemas, profiles, skills, and triage resolver."""
 
 from app.infrastructure.orchestration.state.profiles import (
     AgentConfig,
@@ -10,7 +10,6 @@ from app.infrastructure.orchestration.state.profiles import (
     OrchestratorProfileConfig,
     TokenEconomyConfig,
     WorkflowConfig,
-    get_config,
 )
 from app.infrastructure.orchestration.state.schema import (
     ALL_GRAPH_STATUSES,
@@ -35,28 +34,28 @@ from app.infrastructure.orchestration.state.schema import (
     STATUS_RUNNING,
     STATUS_WAITING_APPROVAL,
     CompanyState,
+    CompanyStateFactory,
     ExecutionLogEntry,
+    ExecutionLogManager,
     GraphPhase,
     GraphState,
     GraphStatus,
     IntentType,
     PlanStep,
     TriageSnapshot,
-    append_execution_log,
     create_initial_graph_state,
-    create_initial_state,
 )
 from app.infrastructure.orchestration.state.skills import (
     ArchitecturePlanningSkill,
+    BaseOrchestratorSkill,
     CodeAnalysisSkill,
     CodeVerificationSkill,
     DirectQASkill,
     OrchestratorSkill,
     SkillRegistry,
     SkillSpec,
-    get_default_skill_registry,
 )
-from app.infrastructure.orchestration.state.triage_bridge import resolve_profile_with_triage
+from app.infrastructure.orchestration.state.triage_bridge import TriageProfileResolver
 
 __all__ = [
     "ALL_GRAPH_STATUSES",
@@ -83,13 +82,16 @@ __all__ = [
     "AgentConfig",
     "AgentPersonaConfig",
     "ArchitecturePlanningSkill",
+    "BaseOrchestratorSkill",
     "CodeAnalysisSkill",
     "CodeVerificationSkill",
     "CompanyState",
+    "CompanyStateFactory",
     "ConfigManager",
     "ContextPolicy",
     "DirectQASkill",
     "ExecutionLogEntry",
+    "ExecutionLogManager",
     "GraphPhase",
     "GraphState",
     "GraphStatus",
@@ -102,12 +104,8 @@ __all__ = [
     "SkillRegistry",
     "SkillSpec",
     "TokenEconomyConfig",
+    "TriageProfileResolver",
     "TriageSnapshot",
     "WorkflowConfig",
-    "append_execution_log",
     "create_initial_graph_state",
-    "create_initial_state",
-    "get_config",
-    "get_default_skill_registry",
-    "resolve_profile_with_triage",
 ]

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, ClassVar
 
 import yaml
 
@@ -120,245 +120,10 @@ class OrchestratorProfileConfig:
         }
 
 
-def _default_routing_rules() -> dict[str, IntentRoutingRule]:
-    return {
-        INTENT_DIRECT_QA: IntentRoutingRule(
-            intent=INTENT_DIRECT_QA,
-            task_type="DIRECT_QA",
-            match_lightweight=True,
-            prefix_keywords=(
-                "explain",
-                "what is",
-                "what are",
-                "who is",
-                "describe",
-                "how does",
-                "tell me",
-                "show me",
-                "overview of",
-                "why ",
-                "hi",
-                "hello",
-                "hey",
-                "thanks",
-                "thank you",
-            ),
-        ),
-        INTENT_ARCHITECTURE_DESIGN: IntentRoutingRule(
-            intent=INTENT_ARCHITECTURE_DESIGN,
-            task_type="ARCHITECTURE",
-            keywords=(
-                "architect",
-                "blueprint",
-                "design spec",
-                "system design",
-                "schema design",
-                "architecture diagram",
-            ),
-        ),
-        INTENT_CODE_TEST_FIX: IntentRoutingRule(
-            intent=INTENT_CODE_TEST_FIX,
-            task_type="CODE_TEST_FIX",
-            keywords=(
-                "fix",
-                "test",
-                "patch",
-                "refactor",
-                "bug",
-                "implement code",
-                "unit test",
-                "self-correction",
-            ),
-        ),
-        INTENT_FOCUSED_TOOL_TASK: IntentRoutingRule(
-            intent=INTENT_FOCUSED_TOOL_TASK,
-            task_type="FOCUSED_TOOL_TASK",
-            keywords=(
-                "analyze",
-                "inspect",
-                "audit",
-                "search",
-                "lint",
-                "find in files",
-                "check file",
-                "review code",
-            ),
-        ),
-        INTENT_COMPLEX_PIPELINE: IntentRoutingRule(
-            intent=INTENT_COMPLEX_PIPELINE,
-            task_type="FULL_PIPELINE",
-            keywords=(
-                "build",
-                "create",
-                "develop",
-                "solve",
-                "application",
-                "service",
-                "pipeline",
-                "full",
-                "implement",
-            ),
-        ),
-    }
-
-
-def _default_orchestrator_profiles() -> dict[str, OrchestratorProfileConfig]:
-    return {
-        INTENT_DIRECT_QA: OrchestratorProfileConfig(
-            intent=INTENT_DIRECT_QA,
-            task_type="DIRECT_QA",
-            fast_path=True,
-            requires_planner=False,
-            requires_approval=False,
-            subgraphs=(),
-            skills=("direct_qa",),
-            tool_policy=ToolRetrievalPolicy.tool_less(),
-            tool_query="",
-            plan_template=(
-                {
-                    "step": 1,
-                    "action": "direct_execution",
-                    "description": "Answer user query directly via fast-path",
-                },
-            ),
-        ),
-        INTENT_FOCUSED_TOOL_TASK: OrchestratorProfileConfig(
-            intent=INTENT_FOCUSED_TOOL_TASK,
-            task_type="FOCUSED_TOOL_TASK",
-            fast_path=False,
-            requires_planner=True,
-            requires_approval=False,
-            subgraphs=(),
-            skills=("code_analysis",),
-            tool_policy=ToolRetrievalPolicy(
-                enabled=True,
-                max_active_tools=4,
-                base_tools=("search_available_tools",),
-            ),
-            tool_query="file view search grep list",
-            plan_template=(
-                {
-                    "step": 1,
-                    "action": "focused_tool_execution",
-                    "description": "Inspect workspace and execute focused tool analysis",
-                },
-            ),
-        ),
-        INTENT_ARCHITECTURE_DESIGN: OrchestratorProfileConfig(
-            intent=INTENT_ARCHITECTURE_DESIGN,
-            task_type="ARCHITECTURE",
-            fast_path=False,
-            requires_planner=True,
-            requires_approval=True,
-            subgraphs=("architect_subgraph",),
-            skills=("architecture_planning",),
-            tool_policy=ToolRetrievalPolicy(
-                enabled=True,
-                max_active_tools=3,
-                base_tools=("search_available_tools",),
-            ),
-            tool_query="file view search architecture",
-            plan_template=(
-                {
-                    "step": 1,
-                    "action": "architect_subgraph",
-                    "description": "Generate and validate architectural blueprint",
-                },
-            ),
-        ),
-        INTENT_CODE_TEST_FIX: OrchestratorProfileConfig(
-            intent=INTENT_CODE_TEST_FIX,
-            task_type="CODE_TEST_FIX",
-            fast_path=False,
-            requires_planner=True,
-            requires_approval=True,
-            subgraphs=("coder_qa_subgraph",),
-            skills=("code_verification",),
-            tool_policy=ToolRetrievalPolicy(
-                enabled=True,
-                max_active_tools=5,
-                base_tools=("search_available_tools",),
-            ),
-            tool_query="file write view edit run command pytest",
-            plan_template=(
-                {
-                    "step": 1,
-                    "action": "coder_qa_subgraph",
-                    "description": "Implement code and execute verification loop",
-                },
-            ),
-        ),
-        INTENT_COMPLEX_PIPELINE: OrchestratorProfileConfig(
-            intent=INTENT_COMPLEX_PIPELINE,
-            task_type="FULL_PIPELINE",
-            fast_path=False,
-            requires_planner=True,
-            requires_approval=True,
-            subgraphs=("architect_subgraph", "coder_qa_subgraph"),
-            skills=("architecture_planning", "code_analysis", "code_verification"),
-            tool_policy=ToolRetrievalPolicy(
-                enabled=True,
-                max_active_tools=5,
-                base_tools=("search_available_tools",),
-            ),
-            tool_query="file write view edit search run command",
-            plan_template=(
-                {
-                    "step": 1,
-                    "action": "architect_subgraph",
-                    "description": "Synthesize architecture blueprint",
-                },
-                {
-                    "step": 2,
-                    "action": "coder_qa_subgraph",
-                    "description": "Implement source code and automated test harness",
-                },
-                {
-                    "step": 3,
-                    "action": "evaluator",
-                    "description": "Verify test results and complete milestone",
-                },
-            ),
-        ),
-    }
-
-
-def _locate_config_file(filename: str) -> Path:
-    resolved_file = Path(__file__).resolve()
-    candidates: list[Path] = [
-        Path.cwd() / "config" / filename,
-        Path.cwd() / "project" / "config" / filename,
-    ]
-    for parent in resolved_file.parents:
-        candidates.append(parent / "config" / filename)
-    for path in candidates:
-        if path.is_file():
-            return path
-    return candidates[0]
-
-
-def _matches_prefix(text_lower: str, prefixes: tuple[str, ...]) -> bool:
-    for prefix in prefixes:
-        kw = prefix.strip().lower()
-        if not kw:
-            continue
-        if text_lower == kw or text_lower.startswith((f"{kw} ", f"{kw},", f"{kw}!", f"{kw}?")):
-            return True
-    return False
-
-
-def _matches_keywords(text_lower: str, keywords: tuple[str, ...]) -> bool:
-    return any(kw.lower() in text_lower for kw in keywords if kw)
-
-
-def _load_yaml_dict(path: Path) -> dict[str, Any]:
-    with open(path, encoding="utf-8") as f:
-        loaded: Any = yaml.safe_load(f)
-    return loaded if isinstance(loaded, dict) else {}
-
-
 class OrchestratorConfigLoader:
     """Manages loaded agent definitions, workflow rules, and dynamic execution profiles."""
+
+    _default_instance: ClassVar[OrchestratorConfigLoader | None] = None
 
     def __init__(
         self,
@@ -367,26 +132,280 @@ class OrchestratorConfigLoader:
         profiles_path: Path | str | None = None,
         triage_service: CascadingTriageService | None = None,
     ) -> None:
-        self._agents_path = Path(agents_path) if agents_path else _locate_config_file("agents.yaml")
-        self._tasks_path = Path(tasks_path) if tasks_path else _locate_config_file("tasks.yaml")
+        self._agents_path = (
+            Path(agents_path) if agents_path else self.locate_config_file("agents.yaml")
+        )
+        self._tasks_path = Path(tasks_path) if tasks_path else self.locate_config_file("tasks.yaml")
         self._profiles_path = (
             Path(profiles_path)
             if profiles_path
-            else _locate_config_file("orchestrator_profiles.yaml")
+            else self.locate_config_file("orchestrator_profiles.yaml")
         )
         self._triage_service = triage_service
         self._agents: dict[str, AgentConfig] = {}
         self._workflow: WorkflowConfig = WorkflowConfig()
         self._default_intent: str = INTENT_COMPLEX_PIPELINE
-        self._routing_rules: dict[str, IntentRoutingRule] = _default_routing_rules()
+        self._routing_rules: dict[str, IntentRoutingRule] = self.default_routing_rules()
         self._has_custom_routing_rules: bool = False
-        self._profiles: dict[str, OrchestratorProfileConfig] = _default_orchestrator_profiles()
+        self._profiles: dict[str, OrchestratorProfileConfig] = self.default_profiles()
         self.reload()
+
+    @classmethod
+    def default(cls) -> OrchestratorConfigLoader:
+        """Return the lazily initialized global ``OrchestratorConfigLoader`` singleton."""
+        if cls._default_instance is None:
+            cls._default_instance = cls()
+        return cls._default_instance
+
+    @classmethod
+    def reset_default(cls) -> None:
+        """Clear the cached singleton instance (useful for isolated tests)."""
+        cls._default_instance = None
+
+    @staticmethod
+    def locate_config_file(filename: str) -> Path:
+        """Resolve a YAML config file under ``config/`` across CWD or package ancestors."""
+        resolved_file = Path(__file__).resolve()
+        candidates: list[Path] = [
+            Path.cwd() / "config" / filename,
+            Path.cwd() / "project" / "config" / filename,
+        ]
+        for parent in resolved_file.parents:
+            candidates.append(parent / "config" / filename)
+        for path in candidates:
+            if path.is_file():
+                return path
+        return candidates[0]
+
+    @staticmethod
+    def default_routing_rules() -> dict[str, IntentRoutingRule]:
+        """Return built-in fallback intent routing rules."""
+        return {
+            INTENT_DIRECT_QA: IntentRoutingRule(
+                intent=INTENT_DIRECT_QA,
+                task_type="DIRECT_QA",
+                match_lightweight=True,
+                prefix_keywords=(
+                    "explain",
+                    "what is",
+                    "what are",
+                    "who is",
+                    "describe",
+                    "how does",
+                    "tell me",
+                    "show me",
+                    "overview of",
+                    "why ",
+                    "hi",
+                    "hello",
+                    "hey",
+                    "thanks",
+                    "thank you",
+                ),
+            ),
+            INTENT_ARCHITECTURE_DESIGN: IntentRoutingRule(
+                intent=INTENT_ARCHITECTURE_DESIGN,
+                task_type="ARCHITECTURE",
+                keywords=(
+                    "architect",
+                    "blueprint",
+                    "design spec",
+                    "system design",
+                    "schema design",
+                    "architecture diagram",
+                ),
+            ),
+            INTENT_CODE_TEST_FIX: IntentRoutingRule(
+                intent=INTENT_CODE_TEST_FIX,
+                task_type="CODE_TEST_FIX",
+                keywords=(
+                    "fix",
+                    "test",
+                    "patch",
+                    "refactor",
+                    "bug",
+                    "implement code",
+                    "unit test",
+                    "self-correction",
+                ),
+            ),
+            INTENT_FOCUSED_TOOL_TASK: IntentRoutingRule(
+                intent=INTENT_FOCUSED_TOOL_TASK,
+                task_type="FOCUSED_TOOL_TASK",
+                keywords=(
+                    "analyze",
+                    "inspect",
+                    "audit",
+                    "search",
+                    "lint",
+                    "find in files",
+                    "check file",
+                    "review code",
+                ),
+            ),
+            INTENT_COMPLEX_PIPELINE: IntentRoutingRule(
+                intent=INTENT_COMPLEX_PIPELINE,
+                task_type="FULL_PIPELINE",
+                keywords=(
+                    "build",
+                    "create",
+                    "develop",
+                    "solve",
+                    "application",
+                    "service",
+                    "pipeline",
+                    "full",
+                    "implement",
+                ),
+            ),
+        }
+
+    @staticmethod
+    def default_profiles() -> dict[str, OrchestratorProfileConfig]:
+        """Return built-in fallback orchestrator execution profiles."""
+        return {
+            INTENT_DIRECT_QA: OrchestratorProfileConfig(
+                intent=INTENT_DIRECT_QA,
+                task_type="DIRECT_QA",
+                fast_path=True,
+                requires_planner=False,
+                requires_approval=False,
+                subgraphs=(),
+                skills=("direct_qa",),
+                tool_policy=ToolRetrievalPolicy.tool_less(),
+                tool_query="",
+                plan_template=(
+                    {
+                        "step": 1,
+                        "action": "direct_execution",
+                        "description": "Answer user query directly via fast-path",
+                    },
+                ),
+            ),
+            INTENT_FOCUSED_TOOL_TASK: OrchestratorProfileConfig(
+                intent=INTENT_FOCUSED_TOOL_TASK,
+                task_type="FOCUSED_TOOL_TASK",
+                fast_path=False,
+                requires_planner=True,
+                requires_approval=False,
+                subgraphs=(),
+                skills=("code_analysis",),
+                tool_policy=ToolRetrievalPolicy(
+                    enabled=True,
+                    max_active_tools=4,
+                    base_tools=("search_available_tools",),
+                ),
+                tool_query="file view search grep list",
+                plan_template=(
+                    {
+                        "step": 1,
+                        "action": "focused_tool_execution",
+                        "description": "Inspect workspace and execute focused tool analysis",
+                    },
+                ),
+            ),
+            INTENT_ARCHITECTURE_DESIGN: OrchestratorProfileConfig(
+                intent=INTENT_ARCHITECTURE_DESIGN,
+                task_type="ARCHITECTURE",
+                fast_path=False,
+                requires_planner=True,
+                requires_approval=True,
+                subgraphs=("architect_subgraph",),
+                skills=("architecture_planning",),
+                tool_policy=ToolRetrievalPolicy(
+                    enabled=True,
+                    max_active_tools=3,
+                    base_tools=("search_available_tools",),
+                ),
+                tool_query="file view search architecture",
+                plan_template=(
+                    {
+                        "step": 1,
+                        "action": "architect_subgraph",
+                        "description": "Generate and validate architectural blueprint",
+                    },
+                ),
+            ),
+            INTENT_CODE_TEST_FIX: OrchestratorProfileConfig(
+                intent=INTENT_CODE_TEST_FIX,
+                task_type="CODE_TEST_FIX",
+                fast_path=False,
+                requires_planner=True,
+                requires_approval=True,
+                subgraphs=("coder_qa_subgraph",),
+                skills=("code_verification",),
+                tool_policy=ToolRetrievalPolicy(
+                    enabled=True,
+                    max_active_tools=5,
+                    base_tools=("search_available_tools",),
+                ),
+                tool_query="file write view edit run command pytest",
+                plan_template=(
+                    {
+                        "step": 1,
+                        "action": "coder_qa_subgraph",
+                        "description": "Implement code and execute verification loop",
+                    },
+                ),
+            ),
+            INTENT_COMPLEX_PIPELINE: OrchestratorProfileConfig(
+                intent=INTENT_COMPLEX_PIPELINE,
+                task_type="FULL_PIPELINE",
+                fast_path=False,
+                requires_planner=True,
+                requires_approval=True,
+                subgraphs=("architect_subgraph", "coder_qa_subgraph"),
+                skills=("architecture_planning", "code_analysis", "code_verification"),
+                tool_policy=ToolRetrievalPolicy(
+                    enabled=True,
+                    max_active_tools=5,
+                    base_tools=("search_available_tools",),
+                ),
+                tool_query="file write view edit search run command",
+                plan_template=(
+                    {
+                        "step": 1,
+                        "action": "architect_subgraph",
+                        "description": "Synthesize architecture blueprint",
+                    },
+                    {
+                        "step": 2,
+                        "action": "coder_qa_subgraph",
+                        "description": "Implement source code and automated test harness",
+                    },
+                    {
+                        "step": 3,
+                        "action": "evaluator",
+                        "description": "Verify test results and complete milestone",
+                    },
+                ),
+            ),
+        }
+
+    @staticmethod
+    def _matches_prefix(text_lower: str, prefixes: tuple[str, ...]) -> bool:
+        for prefix in prefixes:
+            kw = prefix.strip().lower()
+            if not kw:
+                continue
+            if text_lower == kw or text_lower.startswith((f"{kw} ", f"{kw},", f"{kw}!", f"{kw}?")):
+                return True
+        return False
+
+    @staticmethod
+    def _matches_keywords(text_lower: str, keywords: tuple[str, ...]) -> bool:
+        return any(kw.lower() in text_lower for kw in keywords if kw)
+
+    @staticmethod
+    def _load_yaml_dict(path: Path) -> dict[str, Any]:
+        with open(path, encoding="utf-8") as f:
+            loaded: Any = yaml.safe_load(f)
+        return loaded if isinstance(loaded, dict) else {}
 
     def reload(self) -> None:
         """Reload agent definitions, workflow limits, and execution profiles from disk."""
         if self._agents_path.is_file():
-            data = _load_yaml_dict(self._agents_path)
+            data = self._load_yaml_dict(self._agents_path)
             raw_agents = data.get("agents")
             if isinstance(raw_agents, dict):
                 for raw_key, val in raw_agents.items():
@@ -446,7 +465,7 @@ class OrchestratorConfigLoader:
                     )
 
         if self._tasks_path.is_file():
-            data = _load_yaml_dict(self._tasks_path)
+            data = self._load_yaml_dict(self._tasks_path)
             raw_wf = data.get("workflow")
             wf = raw_wf if isinstance(raw_wf, dict) else {}
             raw_te = data.get("token_economy")
@@ -468,16 +487,16 @@ class OrchestratorConfigLoader:
         self._load_orchestrator_profiles()
 
     def _load_orchestrator_profiles(self) -> None:
-        default_rules = _default_routing_rules()
+        default_rules = self.default_routing_rules()
         self._routing_rules = default_rules
         self._has_custom_routing_rules = False
-        self._profiles = _default_orchestrator_profiles()
+        self._profiles = self.default_profiles()
         self._default_intent = INTENT_COMPLEX_PIPELINE
 
         if not self._profiles_path.is_file():
             return
 
-        data = _load_yaml_dict(self._profiles_path)
+        data = self._load_yaml_dict(self._profiles_path)
 
         default_intent = data.get("default_intent")
         if isinstance(default_intent, str) and default_intent.strip():
@@ -578,17 +597,17 @@ class OrchestratorConfigLoader:
 
         return self._profiles.get(
             self._default_intent,
-            _default_orchestrator_profiles()[INTENT_COMPLEX_PIPELINE],
+            self.default_profiles()[INTENT_COMPLEX_PIPELINE],
         )
 
     def _classify_with_custom_rules(self, requirement: str) -> OrchestratorProfileConfig | None:
         req_lower = requirement.strip().lower()
-        default_rules = _default_routing_rules()
+        default_rules = self.default_routing_rules()
         for intent_name, rule in self._routing_rules.items():
             default_rule = default_rules.get(intent_name)
             if default_rule == rule:
                 continue
-            if _matches_prefix(req_lower, rule.prefix_keywords) or _matches_keywords(
+            if self._matches_prefix(req_lower, rule.prefix_keywords) or self._matches_keywords(
                 req_lower, rule.keywords
             ):
                 return self.get_profile(intent_name)
@@ -601,15 +620,13 @@ class OrchestratorConfigLoader:
         is_lightweight: bool = False,
         triage_service: CascadingTriageService | None = None,
     ) -> tuple[OrchestratorProfileConfig, TriageDecision]:
-        """Classify a prompt via CascadingTriageService and return (profile, decision)."""
-        from app.infrastructure.orchestration.state.triage_bridge import resolve_profile_with_triage
+        """Classify a prompt via ``TriageProfileResolver`` and return ``(profile, decision)``."""
+        from app.infrastructure.orchestration.state.triage_bridge import TriageProfileResolver
 
         svc = triage_service or self._triage_service
-        profile, decision = resolve_profile_with_triage(
+        resolver = TriageProfileResolver(self, triage_service=svc)
+        profile, decision = resolver.classify_and_resolve(
             requirement,
-            self._profiles,
-            default_intent=self._default_intent,
-            triage_service=svc,
             is_lightweight=is_lightweight,
         )
         if not is_lightweight and self._has_custom_routing_rules:
@@ -625,13 +642,18 @@ class OrchestratorConfigLoader:
         is_lightweight: bool = False,
         triage_service: CascadingTriageService | None = None,
     ) -> OrchestratorProfileConfig:
-        """Classify a prompt into a configured OrchestratorProfileConfig."""
+        """Classify a prompt into a configured ``OrchestratorProfileConfig``."""
         profile, _ = self.classify_intent_with_decision(
             requirement,
             is_lightweight=is_lightweight,
             triage_service=triage_service,
         )
         return profile
+
+    @property
+    def default_intent(self) -> str:
+        """Return the configured fallback intent name."""
+        return self._default_intent
 
     @property
     def routing_rules(self) -> dict[str, IntentRoutingRule]:
@@ -651,17 +673,6 @@ class OrchestratorConfigLoader:
 
 ConfigManager = OrchestratorConfigLoader
 
-_GLOBAL_CONFIG: OrchestratorConfigLoader | None = None
-
-
-def get_config() -> OrchestratorConfigLoader:
-    """Return the lazily initialized global OrchestratorConfigLoader singleton."""
-    global _GLOBAL_CONFIG
-    if _GLOBAL_CONFIG is None:
-        _GLOBAL_CONFIG = OrchestratorConfigLoader()
-    return _GLOBAL_CONFIG
-
-
 __all__ = [
     "AgentConfig",
     "AgentPersonaConfig",
@@ -672,10 +683,4 @@ __all__ = [
     "OrchestratorProfileConfig",
     "TokenEconomyConfig",
     "WorkflowConfig",
-    "_default_orchestrator_profiles",
-    "_default_routing_rules",
-    "_locate_config_file",
-    "_matches_keywords",
-    "_matches_prefix",
-    "get_config",
 ]

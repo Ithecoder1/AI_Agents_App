@@ -69,7 +69,7 @@
       "requires_workspace_manifest": true,
       "target_model_tier": "reasoning",
       "token_budget": 4096,
-      "latency_ms": 22.935,
+      "latency_ms": 23.052,
       "task_type": "FULL_PIPELINE",
       "is_lightweight": false,
       "fast_path": false,
@@ -115,13 +115,13 @@
   },
   "execution_logs": [
     {
-      "timestamp": "2026-11-23T10:24:18.925761+00:00",
+      "timestamp": "2026-11-23T12:43:19.271481+00:00",
       "agent": "system",
       "phase": "INITIALIZATION",
       "message": "Initialized graph session 'sess-master-e2e' for project 'master-e2e' with requirement: 'solve: 1+1 arithmetic evaluator'"
     },
     {
-      "timestamp": "2026-11-23T10:24:18.954472+00:00",
+      "timestamp": "2026-11-23T12:43:19.300119+00:00",
       "agent": "ceo_triage",
       "phase": "ARCHITECT",
       "message": "Triage: Classified intent='COMPLEX_PIPELINE' (task_type='FULL_PIPELINE', tier=3, confidence=0.600, fast_path=False).",
@@ -133,7 +133,7 @@
         "requires_workspace_manifest": true,
         "target_model_tier": "reasoning",
         "token_budget": 4096,
-        "latency_ms": 22.935,
+        "latency_ms": 23.052,
         "task_type": "FULL_PIPELINE",
         "is_lightweight": false,
         "fast_path": false,
@@ -150,7 +150,7 @@
       }
     },
     {
-      "timestamp": "2026-11-23T10:24:18.955993+00:00",
+      "timestamp": "2026-11-23T12:43:19.301145+00:00",
       "agent": "ceo_planner",
       "phase": "ARCHITECT",
       "message": "Planner: Synthesized 3-step plan for profile 'COMPLEX_PIPELINE'.",
@@ -177,7 +177,7 @@
       }
     },
     {
-      "timestamp": "2026-11-23T10:24:18.959107+00:00",
+      "timestamp": "2026-11-23T12:43:19.303672+00:00",
       "agent": "subgraph_router",
       "phase": "ARCHITECT",
       "message": "Router: Dispatching workflow for intent='COMPLEX_PIPELINE' (completed=[]).",
@@ -188,7 +188,7 @@
       }
     },
     {
-      "timestamp": "2026-11-23T10:24:18.966767+00:00",
+      "timestamp": "2026-11-23T12:43:19.310691+00:00",
       "agent": "architect",
       "phase": "ARCHITECT",
       "message": "Architect: Parsed requirements for domain 'arithmetic_evaluator'.",
@@ -203,7 +203,7 @@
       }
     },
     {
-      "timestamp": "2026-11-23T10:24:18.969761+00:00",
+      "timestamp": "2026-11-23T12:43:19.314340+00:00",
       "agent": "architect",
       "phase": "ARCHITECT",
       "message": "Architect: Generated architecture specification and module layout.",
@@ -212,7 +212,7 @@
       }
     },
     {
-      "timestamp": "2026-11-23T10:24:18.973756+00:00",
+      "timestamp": "2026-11-23T12:43:19.316341+00:00",
       "agent": "architect",
       "phase": "ARCHITECT",
       "message": "Architect: Validated architecture blueprint schemas and contracts.",
@@ -221,7 +221,7 @@
       }
     },
     {
-      "timestamp": "2026-11-23T10:24:19.006948+00:00",
+      "timestamp": "2026-11-23T12:43:19.350944+00:00",
       "agent": "coder",
       "phase": "CODER",
       "message": "Coder: Implemented core source files and test fixtures.",
@@ -236,7 +236,7 @@
       }
     },
     {
-      "timestamp": "2026-11-23T10:24:19.018593+00:00",
+      "timestamp": "2026-11-23T12:43:19.360040+00:00",
       "agent": "devops",
       "phase": "DEVOPS",
       "message": "DevOps: Configured requirements.txt, pytest.ini, and test execution harness.",
@@ -248,13 +248,13 @@
       }
     },
     {
-      "timestamp": "2026-11-23T10:24:19.018593+00:00",
+      "timestamp": "2026-11-23T12:43:19.360040+00:00",
       "agent": "devops",
       "phase": "DEVOPS",
       "message": "DevOps: Configured requirements.txt and pytest execution harness."
     },
     {
-      "timestamp": "2026-11-23T10:24:21.485573+00:00",
+      "timestamp": "2026-11-23T12:43:21.399415+00:00",
       "agent": "qa",
       "phase": "QA",
       "message": "QA: All automated tests PASSED successfully.",

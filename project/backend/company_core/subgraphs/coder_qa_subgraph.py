@@ -1,6 +1,11 @@
-"""Backward-compatibility shim for the OOP Code-Test-Fix sub-graph."""
+"""DEPRECATED: Compatibility shim for the OOP Code-Test-Fix sub-graph.
+
+Prefer ``app.infrastructure.orchestration.CoderQASubGraphBuilder``.
+"""
 
 from __future__ import annotations
+
+__deprecated__ = True
 
 from collections.abc import Callable, Mapping
 from pathlib import Path

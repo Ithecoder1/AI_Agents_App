@@ -1,6 +1,11 @@
-"""Backward-compatibility shim for Modular Skills Layer."""
+"""DEPRECATED: Compatibility shim for Modular Skills Layer.
+
+Prefer ``app.infrastructure.orchestration.state.skills``.
+"""
 
 from __future__ import annotations
+
+__deprecated__ = True
 
 from app.infrastructure.orchestration.state.skills import (
     ArchitecturePlanningSkill,

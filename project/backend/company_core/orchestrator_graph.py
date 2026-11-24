@@ -1,6 +1,12 @@
-"""Backward-compatibility shim for the OOP Master Orchestrator graph and Command nodes."""
+"""DEPRECATED: Compatibility shim for the OOP Master Orchestrator graph and Command nodes.
+
+Prefer ``app.infrastructure.orchestration.MasterGraphBuilder`` and
+``app.infrastructure.orchestration.nodes``.
+"""
 
 from __future__ import annotations
+
+__deprecated__ = True
 
 from collections.abc import Callable
 from pathlib import Path

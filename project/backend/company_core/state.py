@@ -1,6 +1,11 @@
-"""Backward-compatibility shim for centralized orchestration state schema."""
+"""DEPRECATED: Compatibility shim for centralized orchestration state schema.
+
+Prefer ``app.domain.graph_state`` and ``app.infrastructure.orchestration.state``.
+"""
 
 from __future__ import annotations
+
+__deprecated__ = True
 
 from typing import Any
 

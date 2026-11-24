@@ -1,88 +1,89 @@
-# ארכיטקטורת Vibe Forge – זרימת בקשה (Request Lifecycle)
+# ארכיטקטורת Vibe Forge – זרימת בקשה ואורקסטרציה (Request & Orchestration Lifecycle)
 
 המערכת בנויה לפי עקרונות ה-**Hexagonal / Clean Architecture**, ומופרדת לשכבות **Presentation**, **Application**, **Domain**, ו-**Infrastructure**.
 
-מסמך זה מפרט את ה-Call Stack המלא, זרימת הבקשה, חלוקת האחריות בין השכבות, זהות הסוכן המטפל, ואופן החזרת התשובה ללקוח.
+מסמך זה מפרט את ה-Call Stack המלא, ארכיטקטורת האורקסטרציה מבוססת ה-OOP תחת `app/infrastructure/orchestration/`, זרימת הבקשה, וכללי ההפרדה הנאכפים אוטומטית ע"י `import-linter`.
 
 ---
 
-## 1. תרשים זרימת הבקשה (Call Stack Flow)
+## 1. תרשים זרימת הבקשה ואורקסטרציה (Orchestration Sequence Diagram)
 
 ```mermaid
 sequenceDiagram
     autonumber
     actor User as Client (Web UI / SPA)
-    participant API as Presentation (FastAPI / WebSocket)
-    participant App as Application (ProviderRegistry)
-    participant Domain as Domain (ExecutionTask / Models)
-    participant Provider as Infrastructure (IAgentProvider / Adapter)
+    participant API as Presentation (Composition Root / FastAPI)
+    participant Chat as Application (ChatTurnService)
+    participant Turn as ITurnOrchestrator (TurnOrchestratorService)
+    participant Master as OrchestratorEngine (MasterGraphBuilder)
+    participant Sub as SubGraphs (Architect / CoderQA)
+    participant Provider as Provider Adapter (IAgentProvider)
 
-    User->>API: WS Connect & Send JSON {provider_id, user_prompt, model...}
-    API->>App: registry.resolve(provider_id)
-    App-->>API: מחזיר מופע של ספק מתאים (למשל FakeProvider)
-    API->>Domain: ExecutionTask.create(prompt, params).start(provider_id)
-    Domain-->>API: מופע Task בסטטוס RUNNING
-    API->>Provider: provider.stream_execute(task)
-    loop Async Generator (StreamEvent)
-        Provider-->>API: yield StreamEvent (STATUS, THOUGHT, TOKEN, ARTIFACT, USAGE)
-        API-->>User: websocket.send_json(event.with_seq(seq))
-        Note over User: עדכון טרמינל, הזרמת טוקנים, רינדור Diff בזמן אמת
+    User->>API: POST /api/chats/{id}/messages + WS Subscribe
+    API->>Chat: start_turn(session_id, user_prompt)
+    Chat->>Turn: stream_turn(task, provider, approval_event, cancel_event)
+    Turn->>Turn: Triage & MermaidWorkflowVisualizer.generate()
+    alt require_approval == true
+        Turn-->>User: StreamEvent(STATUS: WAITING_APPROVAL + mermaid_code)
+        User->>API: POST /api/chats/{id}/approve
+        API->>Turn: approval_event.set()
     end
-    Provider-->>API: yield StreamEvent (DONE)
-    API-->>User: websocket.send_json(DONE)
-    Note over User: סיום ריצה (SUCCEEDED) ועצירת טיימר
+    alt intent == DIRECT_QA / FOCUSED_TOOL_TASK
+        Turn->>Provider: provider.stream_execute(task, active_tools)
+        Provider-->>Turn: StreamEvent (THOUGHT, TOKEN, TOOL_CALL, DONE)
+    else Multi-Agent Pipeline (ARCHITECTURE / CODE_TEST_FIX / COMPLEX_PIPELINE)
+        Turn->>Master: engine.astream_nodes(user_requirement, project_id)
+        Master->>Sub: TriageNode -> PlannerNode -> RouterNode -> ArchitectSub / CoderQASub
+        Sub-->>Master: Compiled Sub-Graph State Updates (JSON Checkpointer)
+        Master-->>Turn: (node_name, state_snapshot) via StartupNodeEventMapper
+    end
+    Turn-->>Chat: StreamEvent Sequence (PLAN, ARTIFACT, TOKEN, USAGE, DONE)
+    Chat-->>User: Finalized Persistence & WebSocket Replay
 ```
 
 ---
 
-## 2. פירוט השכבות וחלוקת האחריות (Layers & Responsibilities)
+## 2. ארכיטקטורת מודול האורקסטרציה (`app/infrastructure/orchestration/`)
 
-| שכבה | רכיבים מרכזיים | תפקיד ואחריות בביצוע ה-Prompt |
-| :--- | :--- | :--- |
-| **Presentation (Client)** | `web/assets/js/app.js`, `web/index.html` | קליטת הקלט מהמשתמש, פתיחת חיבור WebSocket, שליחת הבקשה, וקבלת אירועי ה-Stream בזמן אמת לעדכון ה-DOM (טקסט, מחשבות, תצוגת קבצים/Diff). |
-| **Presentation (Backend / API)** | `backend/app/api/main.py` (`websocket_execute`, `execute_task`) | **Composition Root** ונקודת כניסה לשרת. מאמתת את הקלט, מבקשת את הסוכן מה-Registry, יוצרת את מודלי ה-Domain ומזרימה את האירועים ל-Socket בפורמט JSON עם מספור רציף (`seq`). קיים גם נתיב REST חלופי. |
-| **Application Layer** | `ProviderRegistry`, `PromptLinter`, `config/providers.yaml` | ניהול מחזור החיים ומצבי הבריאות של הספקים (`READY`, `DISABLED`, `FAILED`). אחראי על טעינת הקונפיגורציה ובידוד תקלות בספקים. |
-| **Domain Layer** | `IAgentProvider`, `ExecutionTask`, `Prompt`, `state_machine.py` | **ליבת המערכת הטהורה** (ללא תלות בספריות חיצוניות או I/O). מגדירה את החוזים (Ports), מכונת המצבים של המשימה (`QUEUED` -> `RUNNING` -> `SUCCEEDED` / `FAILED`), ומבני הנתונים הבלתי משתנים (`StreamEvent`, `Artifact`, `Usage`). |
-| **Infrastructure Layer** | `BaseAgentRunner`, `FakeProvider`, `OpenRouter`, `Antigravity` | מימוש ה-Adapters בפועל מול שירותי LLM חיצוניים או סוכני CLI. יורשים מ-`BaseAgentRunner` ומממשים גנרטור אסינכרוני `stream_execute`. |
+מנוע ה-LangGraph מופרד משכבת `company_core/` הישנה ומיושם בגישת OOP מודולרית עם Dependency Injection מפורש:
+
+```text
+project/backend/app/infrastructure/orchestration/
+├── __init__.py          # Facade ציבורי (OrchestratorEngine, TurnOrchestratorService, compile_orchestrator_graph)
+├── engine.py            # OrchestratorEngine (IOrchestratorEngine), OrchestratorDependencies, OrchestratorEngineFactory
+├── turn_service.py      # TurnOrchestratorService (ITurnOrchestrator) – ניהול Approval, Fast-Path ו-Streaming
+├── mermaid.py           # MermaidWorkflowVisualizer (IMermaidWorkflowVisualizer) – Single Source of Truth לדיאגרמות
+├── event_mapper.py      # StartupNodeEventMapper (INodeEventMapper) – המרת snapshots של צמתים ל-StreamEvent
+├── state/               # CompanyState, ExecutionLogManager, OrchestratorConfigLoader, SkillRegistry, TriageProfileResolver
+├── persistence/         # GraphStateHydrator, JsonStateCheckpointer (offloaded via asyncio.to_thread)
+├── adapters/            # WorkspaceFileManager, PytestSubprocessRunner, LocalCodeWorkspaceRunner (ICodeWorkspaceRunner)
+├── subgraphs/           # BaseGraphNode, ArchitectSubGraphBuilder, CoderQASubGraphBuilder, Domain Services
+├── nodes/               # Command Nodes מבודדים: TriageNode, PlannerNode, RouterNode, ExecutorNode, TaskDecomposerNode
+└── graph/               # MasterGraphRouter (Pure Routing) ו-MasterGraphBuilder (StateGraph assembly & compilation)
+```
 
 ---
 
-## 3. מי הסוכן שמטפל בבקשה?
+## 3. פירוט השכבות וחלוקת האחריות (Layers & Responsibilities)
 
-הסוכן שמטפל בבקשה נקבע **דינמית** על פי שדה ה-`provider_id` שנשלח בבקשה:
+| שכבה | רכיבים מרכזיים | תפקיד ואחריות בביצוע ה-Prompt |
+| :--- | :--- | :--- |
+| **Presentation (Client)** | `web/assets/js/app.js`, `web/index.html` | קליטת הקלט מהמשתמש, חיבור WebSocket, תצוגת Mermaid בזמן אמת, Streaming טוקנים ותוצרי קוד/Diff. |
+| **Presentation & Composition Root** | `app/api/main.py`, `app/api/composition.py` | **Composition Root** של המערכת: מזריק `TurnOrchestratorService` אל `ChatTurnService` ויוצר `ProviderDeps` עם `OrchestratorEngineFactory`, `MermaidWorkflowVisualizer` ו-`StartupNodeEventMapper`. |
+| **Application Layer** | `ChatTurnService`, `ProviderRegistry`, `PromptLinter`, `CascadingTriageService`, `DynamicToolRegistry` | תיאום סשנים, טריאז' והפעלת ספקים באמצעות Ports בלבד (`ITurnOrchestrator`, `IAgentProvider`). אסור בייבוא `company_core` או `app.infrastructure.orchestration`. |
+| **Domain Layer** | `app/domain/graph_state.py`, `app/domain/ports/orchestrator.py`, `IAgentProvider`, `ExecutionTask`, `state_machine.py` | **ליבת המערכת הטהורה** (Stdlib בלבד). מגדירה את `GraphState` ואת כל חוזי האורקסטרציה (`ITurnOrchestrator`, `IOrchestratorEngine`, `IOrchestratorEngineFactory`, `IOrchestratorCheckpointer`, `ICodeWorkspaceRunner`, `IProfileClassifier`, `IMermaidWorkflowVisualizer`, `INodeEventMapper`, `TestRunResult`). |
+| **Infrastructure Layer** | `app/infrastructure/orchestration/*`, `persistence/`, `config/`, `workspace/` | מימוש הקונקרטי של מנוע ה-LangGraph, Command Nodes, Sub-Graph Builders, JSON Checkpointer אסינכרוני והרצת `pytest` מבודדת בסביבת העבודה. |
+| **LLM Providers Package** | `providers.kit.BaseAgentRunner`, `StartupOrchestratorProvider`, `OpenRouter`, `Gemini`, `Anthropic`, `Antigravity`, `Fake` | חבילה עצמאית התלויה אך ורק ב-`app.domain` וב-`providers.kit`. אינה מייבאת `app.infrastructure`, `app.application`, `app.api` או `company_core`. |
 
-1. **ברירת המחדל הנוכחית (`FakeProvider`)**:
-   * מוגדר ב-`config/providers.yaml` (ממומש ב-`backend/providers/providers/adapters/fake/adapter.py`).
-   * ספק הדגמה וטסטים המדמה חשיבה (`EventType.THOUGHT`), הזרמת טוקנים בחלקים (`EventType.TOKEN`), יצירת קובץ שינויים (`changes.diff` כ-`EventType.ARTIFACT`), וחישוב צריכת טוקנים (`EventType.USAGE`).
-
-2. **ספקים נוספים בהרחבה**:
-   * **`OpenRouterProvider`** (`openrouter`) – מנתב את הפרומפט למודלים כגון Claude 3.5 Sonnet או GPT-4 דרך OpenRouter API.
-   * **`AntigravityProvider`** (`antigravity`) – מריץ סוכן מקומי ללא מסך (Headless CLI / `agy`) ומאפשר פעולות ישירות בסביבת העבודה.
+> **תאימות לאחור (`company_core/`):** המודולים תחת `project/backend/company_core/` מסומנים כיום כ-`__deprecated__ = True` ומשמשים כשכבת תאימות (Shims) דקה המפנה אל `app.infrastructure.orchestration`.
 
 ---
 
 ## 4. איך התשובה מוחזרת ללקוח?
 
-התשובה מוחזרת באמצעות **Streaming אסינכרוני בזמן אמת**:
-
-### א. בצד השרת (Backend)
-בתוך הפונקציה `websocket_execute` (בקובץ `backend/app/api/main.py`), מתבצעת לולאת `async for event in provider.stream_execute(task):`. כל אירוע מקבל מזהה רץ `seq` ומומר ל-JSON:
-
-```python
-event_with_seq = event.with_seq(seq)
-await websocket.send_json(event_with_seq.to_dict())
-```
-
-### ב. מבנה האירועים המוחזרים (`EventType`)
-* `status`: שינוי סטטוס (`started`, `running`).
-* `thought`: שרשרת מחשבה פנימית של הסוכן.
-* `token`: טקסט שנוצר ומצטבר ברצף.
-* `artifact`: קבצים או תוצרי קוד (כגון Unified Diff של שינויי קבצים).
-* `usage`: כמות הטוקנים שנוצלה (Prompt & Completion) ועלות בדולרים.
-* `done`: אירוע סיום המכיל את `finish_reason`.
-
-### ג. בצד הלקוח (Browser)
-הפונקציה `activeSocket.onmessage` (בקובץ `web/assets/js/app.js`) מפענחת כל Frame:
-* **טוקנים (`token`)**: מוזרמים מידית לטרמינל.
-* **תוצרים (`artifact`)**: מנותבים לפונקציה `renderDiff()` לצביעת שורות ה-Diff (`+` / `-`).
-* **סיום (`done`)**: מעביר את ה-UI למצב `SUCCEEDED` ומעדכן את המונים הסופיים.
+התשובה מוחזרת באמצעות **Streaming אסינכרוני בזמן אמת** (`TurnStream` + WebSocket):
+* `status`: שינויי סטטוס כולל `waiting_approval` בצירוף קוד `mermaid_code` מ-`MermaidWorkflowVisualizer`.
+* `plan`: רשימת שלבים מובנית המתעדכנת דינמית ע"י `StartupNodeEventMapper`.
+* `thought`: חשיבת ביניים של סוכני הטריאז', התכנון והביצוע.
+* `token` / `artifact` / `log`: טקסט התשובה, קובצי מקור/תבניות ופלט בדיקות Pytest.
+* `usage` / `done` / `error`: סיכום צריכת טוקנים, מדדי ביצוע וסיום ה-Turn.

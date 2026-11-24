@@ -1,6 +1,12 @@
-"""Backward-compatibility shim delegating GraphTurnOrchestrator to OOP facade."""
+"""DEPRECATED: Compatibility shim delegating ``GraphTurnOrchestrator`` to OOP facade.
+
+Prefer ``app.infrastructure.orchestration.TurnOrchestratorService`` and
+``MermaidWorkflowVisualizer``.
+"""
 
 from __future__ import annotations
+
+__deprecated__ = True
 
 from pathlib import Path
 

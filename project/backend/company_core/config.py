@@ -1,6 +1,11 @@
-"""Backward-compatibility shim for YAML-backed orchestrator config and profiles."""
+"""DEPRECATED: Backward-compatibility shim for orchestrator config and profiles.
+
+Prefer ``app.infrastructure.orchestration.OrchestratorConfigLoader`` and ``ConfigManager``.
+"""
 
 from __future__ import annotations
+
+__deprecated__ = True
 
 from app.infrastructure.orchestration.state.profiles import (
     AgentConfig,

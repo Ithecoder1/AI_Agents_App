@@ -1,215 +1,234 @@
-"""Lossless JSON state persistence, resumption diagnostics, and hydration helpers."""
+"""OOP state hydration and persistence service for LangGraph orchestration."""
 
 from __future__ import annotations
 
-import contextlib
 import json
 import os
 import tempfile
+import threading
 import time
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, cast
 
-from app.domain.graph_state import (
+from app.infrastructure.orchestration.state import (
     PHASE_ARCHITECT,
     PHASE_CODER,
     PHASE_COMPLETED,
     PHASE_DEVOPS,
+    PHASE_FAILED,
     PHASE_QA,
-    GraphState,
-)
-from app.infrastructure.orchestration.state.schema import (
-    CompanyState,
+    STATUS_COMPLETED,
+    STATUS_FAILED,
+    STATUS_RUNNING,
     ExecutionLogManager,
-)
-
-_REQUIRED_STATE_KEYS: tuple[str, ...] = (
-    "project_id",
-    "user_requirement",
-    "current_phase",
-    "code_files",
-    "completed_tasks",
-    "retry_count",
-)
-
-_OPTIONAL_SCALAR_KEYS: tuple[str, ...] = (
-    "session_id",
-    "current_node",
-    "status",
-    "intent",
-    "max_retries",
-    "auto_approve",
-    "task_type",
+    GraphState,
+    create_initial_graph_state,
 )
 
 
-def _default_log_path() -> Path:
-    return Path.cwd() / "logs" / "company_state.json"
+class GraphStateHydrator:
+    """Encapsulates atomic JSON persistence and lossless hydration of ``GraphState``."""
 
-
-def _copy_optional_graph_fields(source: dict[str, Any], target: dict[str, Any]) -> None:
-    """Copy modern GraphState fields losslessly from *source* into *target* when present."""
-    for key in _OPTIONAL_SCALAR_KEYS:
-        if key in source and source[key] is not None:
-            target[key] = source[key]
-
-    if "messages" in source and isinstance(source["messages"], list):
-        target["messages"] = list(source["messages"])
-    if "active_tools" in source and isinstance(source["active_tools"], list):
-        target["active_tools"] = [
-            dict(t) if isinstance(t, dict) else t for t in source["active_tools"]
-        ]
-    if "subgraph_results" in source and isinstance(source["subgraph_results"], dict):
-        target["subgraph_results"] = dict(source["subgraph_results"])
-    if "execution_profile" in source and isinstance(source["execution_profile"], dict):
-        target["execution_profile"] = dict(source["execution_profile"])
-    if "active_skills" in source and isinstance(source["active_skills"], list):
-        target["active_skills"] = [str(s) for s in source["active_skills"]]
-    if "plan" in source and isinstance(source["plan"], list):
-        target["plan"] = [dict(step) if isinstance(step, dict) else step for step in source["plan"]]
-
-
-def save_graph_state(state: GraphState, filepath: Path | str | None = None) -> Path:
-    """Atomically persist GraphState/CompanyState to a JSON file."""
-    path = Path(filepath) if filepath else _default_log_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-
-    payload = json.dumps(dict(state), indent=2, ensure_ascii=False, default=str)
-
-    temp_dir = path.parent
-    with tempfile.NamedTemporaryFile("w", dir=temp_dir, delete=False, encoding="utf-8") as tf:
-        tf.write(payload)
-        temp_name = tf.name
-
-    try:
-        os.replace(temp_name, path)
-    except PermissionError:
-        # On Windows, retry briefly or fallback to direct write on file contention
-        replaced = False
-        for _ in range(5):
-            time.sleep(0.05)
-            try:
-                os.replace(temp_name, path)
-                replaced = True
-                break
-            except PermissionError:
-                pass
-        if not replaced:
-            path.write_text(payload, encoding="utf-8")
-            with contextlib.suppress(OSError):
-                os.unlink(temp_name)
-    return path
-
-
-def load_graph_state(filepath: Path | str | None = None) -> CompanyState | None:
-    """Load persisted orchestration state losslessly from JSON if valid."""
-    path = Path(filepath) if filepath else _default_log_path()
-    if not path.is_file():
-        return None
-
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-        if not isinstance(data, dict):
-            return None
-        if not all(k in data for k in _REQUIRED_STATE_KEYS):
-            return None
-
-        raw_code_files = data.get("code_files") or {}
-        if not isinstance(raw_code_files, dict):
-            return None
-
-        loaded: dict[str, Any] = {
-            "project_id": str(data["project_id"]),
-            "user_requirement": str(data["user_requirement"]),
-            "current_phase": str(data["current_phase"]),
-            "architecture_spec": (
-                str(data["architecture_spec"])
-                if data.get("architecture_spec") is not None
-                else None
-            ),
-            "code_files": {str(k): str(v) for k, v in raw_code_files.items()},
-            "test_results": (
-                str(data["test_results"]) if data.get("test_results") is not None else None
-            ),
-            "execution_logs": [
-                dict(entry)
-                for entry in (data.get("execution_logs") or [])
-                if isinstance(entry, dict)
-            ],
-            "completed_tasks": [str(t) for t in (data.get("completed_tasks") or [])],
-            "failed_tasks": [str(t) for t in (data.get("failed_tasks") or [])],
-            "error_message": (
-                str(data["error_message"]) if data.get("error_message") is not None else None
-            ),
-            "retry_count": int(data.get("retry_count") or 0),
-        }
-        _copy_optional_graph_fields(data, loaded)
-        return cast(CompanyState, loaded)
-    except (json.JSONDecodeError, OSError, KeyError, TypeError, ValueError):
-        return None
-
-
-def can_resume(state: GraphState | None) -> bool:
-    """Return True if *state* represents an interrupted or incomplete execution."""
-    if state is None:
-        return False
-    return state.get("current_phase") != PHASE_COMPLETED
-
-
-def determine_next_incomplete_phase(state: GraphState) -> str:
-    """Determine the next operational phase based on completed tasks."""
-    completed = set(state.get("completed_tasks") or [])
-    if "architecture" not in completed or not state.get("architecture_spec"):
-        return PHASE_ARCHITECT
-    if "code" not in completed:
-        return PHASE_CODER
-    if "devops" not in completed:
-        return PHASE_DEVOPS
-    if "qa" not in completed:
-        return PHASE_QA
-    return PHASE_COMPLETED
-
-
-def hydrate_resumed_state(state: GraphState) -> CompanyState:
-    """Hydrate state to resume from the last incomplete phase while preserving GraphState fields."""
-    next_phase = determine_next_incomplete_phase(state)
-    updated_logs = ExecutionLogManager().append_to_logs(
-        list(state.get("execution_logs") or []),
-        agent="system",
-        phase=next_phase,
-        message=(
-            f"Resuming execution from incomplete phase: {next_phase}. "
-            f"Skipping completed: {state.get('completed_tasks')}"
-        ),
+    _OPTIONAL_FIELDS: tuple[str, ...] = (
+        "session_id",
+        "current_node",
+        "messages",
+        "active_tools",
+        "subgraph_results",
+        "status",
+        "intent",
+        "execution_profile",
+        "active_skills",
+        "plan",
+        "task_type",
     )
 
-    resumed: dict[str, Any] = {
-        "project_id": state["project_id"],
-        "user_requirement": state["user_requirement"],
-        "current_phase": next_phase,
-        "architecture_spec": state.get("architecture_spec"),
-        "code_files": dict(state.get("code_files") or {}),
-        "test_results": state.get("test_results"),
-        "execution_logs": updated_logs,
-        "completed_tasks": list(state.get("completed_tasks") or []),
-        "failed_tasks": list(state.get("failed_tasks") or []),
-        "error_message": state.get("error_message"),
-        "retry_count": state.get("retry_count", 0),
-    }
-    _copy_optional_graph_fields(dict(state), resumed)
-    return cast(CompanyState, resumed)
+    def __init__(
+        self,
+        default_workspace_dir: Path | None = None,
+        *,
+        log_manager: ExecutionLogManager | None = None,
+    ) -> None:
+        self._default_workspace_dir = (
+            Path(default_workspace_dir)
+            if default_workspace_dir is not None
+            else Path("company_workspace")
+        )
+        self._log_manager = log_manager if log_manager is not None else ExecutionLogManager()
+        self._io_lock = threading.RLock()
+
+    @property
+    def default_workspace_dir(self) -> Path:
+        """Base workspace directory used when no explicit snapshot path is given."""
+        return self._default_workspace_dir
+
+    def default_log_path(self) -> Path:
+        """Return the default state snapshot JSON path within the workspace."""
+        return self._default_workspace_dir / "company_state.json"
+
+    @staticmethod
+    def _atomic_replace(tmp_path: Path, target: Path, *, max_attempts: int = 8) -> None:
+        for attempt in range(max_attempts):
+            try:
+                os.replace(tmp_path, target)
+                return
+            except PermissionError:
+                if attempt == max_attempts - 1:
+                    raise
+                time.sleep(0.01 * (attempt + 1))
+
+    def save(self, state: GraphState, file_path: Path | str | None = None) -> Path:
+        """Atomically persist ``state`` to JSON on disk and return the target path."""
+        target = Path(file_path) if file_path is not None else self.default_log_path()
+        payload = json.dumps(dict(state), indent=2, default=str)
+
+        with self._io_lock:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            fd, tmp_name = tempfile.mkstemp(
+                dir=str(target.parent),
+                prefix=f".{target.stem}_",
+                suffix=".tmp",
+            )
+            tmp_path = Path(tmp_name)
+            try:
+                with os.fdopen(fd, "w", encoding="utf-8") as handle:
+                    handle.write(payload)
+                    handle.flush()
+                    os.fsync(handle.fileno())
+                self._atomic_replace(tmp_path, target)
+            except Exception:
+                if tmp_path.exists():
+                    tmp_path.unlink(missing_ok=True)
+                raise
+        return target
+
+    def load(self, file_path: Path | str | None = None) -> GraphState | None:
+        """Load and normalize a persisted ``GraphState`` snapshot, or return ``None``."""
+        target = Path(file_path) if file_path is not None else self.default_log_path()
+        with self._io_lock:
+            if not target.is_file():
+                return None
+
+            try:
+                raw_obj: object = json.loads(target.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                return None
+
+        if not isinstance(raw_obj, dict):
+            return None
+        if "project_id" not in raw_obj or "user_requirement" not in raw_obj:
+            return None
+
+        session_raw = raw_obj.get("session_id")
+        hydrated = create_initial_graph_state(
+            str(raw_obj.get("user_requirement", "")),
+            project_id=str(raw_obj.get("project_id", "vibe-app")),
+            session_id=str(session_raw) if isinstance(session_raw, str) and session_raw else None,
+            auto_approve=bool(raw_obj.get("auto_approve", True)),
+            max_retries=int(raw_obj.get("max_retries", 3)),
+        )
+
+        self._apply_workflow_fields(raw_obj, hydrated)
+        self._copy_optional_graph_fields(raw_obj, hydrated)
+        return hydrated
+
+    def can_resume(self, state: GraphState | None) -> bool:
+        """Return ``True`` if ``state`` represents an in-progress resumable execution."""
+        if not state:
+            return False
+        phase = str(state.get("current_phase", ""))
+        status = str(state.get("status", ""))
+        if phase in (PHASE_COMPLETED, PHASE_FAILED) or status in (STATUS_COMPLETED, STATUS_FAILED):
+            return False
+        return bool(
+            state.get("user_requirement")
+            or state.get("architecture_spec")
+            or state.get("code_files")
+            or state.get("completed_tasks")
+            or state.get("plan")
+        )
+
+    def determine_next_incomplete_phase(self, state: GraphState) -> str:
+        """Infer the next incomplete execution phase from persisted artifacts and tasks."""
+        current_phase = str(state.get("current_phase", ""))
+        if current_phase in (PHASE_COMPLETED, PHASE_FAILED):
+            return current_phase
+
+        completed = {str(task) for task in state.get("completed_tasks", [])}
+        if "architecture" not in completed and not state.get("architecture_spec"):
+            return PHASE_ARCHITECT
+        if "code" not in completed:
+            return PHASE_CODER
+        if "devops" not in completed:
+            return PHASE_DEVOPS
+        if "qa" not in completed:
+            return PHASE_QA
+        return PHASE_COMPLETED
+
+    def hydrate(self, state: GraphState) -> GraphState:
+        """Prepare a loaded ``GraphState`` snapshot for resumed execution."""
+        next_phase = self.determine_next_incomplete_phase(state)
+        existing_logs = list(state.get("execution_logs", []))
+        updated_logs = self._log_manager.append_to_logs(
+            existing_logs,
+            agent="Persistence",
+            phase="RESUME",
+            message=(
+                f"Resuming execution from phase '{next_phase}' "
+                f"(completed={list(state.get('completed_tasks', []))})."
+            ),
+            details={"resumed_phase": next_phase},
+        )
+        hydrated: GraphState = {
+            **state,
+            "current_phase": next_phase,
+            "execution_logs": updated_logs,
+        }
+        if next_phase not in (PHASE_COMPLETED, PHASE_FAILED):
+            hydrated["status"] = STATUS_RUNNING
+        return hydrated
+
+    @staticmethod
+    def _apply_workflow_fields(source: Mapping[str, Any], target: GraphState) -> None:
+        if "current_phase" in source and isinstance(source["current_phase"], str):
+            target["current_phase"] = source["current_phase"]
+        if "architecture_spec" in source:
+            arch = source["architecture_spec"]
+            target["architecture_spec"] = str(arch) if arch is not None else None
+        if isinstance(source.get("code_files"), Mapping):
+            target["code_files"] = {str(k): str(v) for k, v in dict(source["code_files"]).items()}
+        if "test_results" in source:
+            tr = source["test_results"]
+            target["test_results"] = str(tr) if tr is not None else None
+        if isinstance(source.get("completed_tasks"), list):
+            target["completed_tasks"] = [str(item) for item in source["completed_tasks"]]
+        if isinstance(source.get("failed_tasks"), list):
+            target["failed_tasks"] = [str(item) for item in source["failed_tasks"]]
+        if "error_message" in source:
+            err = source["error_message"]
+            target["error_message"] = str(err) if err is not None else None
+        if "retry_count" in source and isinstance(source["retry_count"], int):
+            target["retry_count"] = source["retry_count"]
+        if isinstance(source.get("execution_logs"), list):
+            target["execution_logs"] = [
+                dict(entry) if isinstance(entry, Mapping) else {"message": str(entry)}
+                for entry in source["execution_logs"]
+            ]
+
+    @classmethod
+    def _copy_optional_graph_fields(cls, source: Mapping[str, Any], target: GraphState) -> None:
+        mutable_target = cast("dict[str, Any]", target)
+        for field_name in cls._OPTIONAL_FIELDS:
+            if field_name not in source:
+                continue
+            value = source[field_name]
+            if isinstance(value, list):
+                mutable_target[field_name] = list(value)
+            elif isinstance(value, dict):
+                mutable_target[field_name] = dict(value)
+            else:
+                mutable_target[field_name] = value
 
 
-save_company_state = save_graph_state
-load_company_state = load_graph_state
-
-__all__ = [
-    "_default_log_path",
-    "can_resume",
-    "determine_next_incomplete_phase",
-    "hydrate_resumed_state",
-    "load_company_state",
-    "load_graph_state",
-    "save_company_state",
-    "save_graph_state",
-]
+__all__ = ["GraphStateHydrator"]

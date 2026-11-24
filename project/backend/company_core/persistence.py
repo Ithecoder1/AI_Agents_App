@@ -1,195 +1,64 @@
-"""Persistence & Resumability engine for the Autonomous Startup Orchestrator."""
+"""DEPRECATED: Compatibility shim for persistence and resumability helpers.
+
+Prefer ``app.infrastructure.orchestration.GraphStateHydrator`` and ``JsonStateCheckpointer``.
+"""
 
 from __future__ import annotations
 
-import contextlib
-import json
-import os
-import tempfile
-import time
+__deprecated__ = True
+
 from pathlib import Path
 
-from langchain_core.runnables import RunnableConfig
-from langgraph.checkpoint.base import (
-    ChannelVersions,
-    Checkpoint,
-    CheckpointMetadata,
+from app.infrastructure.orchestration.persistence import (
+    GraphStateHydrator,
+    JsonStateCheckpointer,
 )
-from langgraph.checkpoint.memory import MemorySaver
+from app.infrastructure.orchestration.state import GraphState
 
-from company_core.state import (
-    PHASE_ARCHITECT,
-    PHASE_CODER,
-    PHASE_COMPLETED,
-    PHASE_DEVOPS,
-    PHASE_QA,
-    CompanyState,
-    append_execution_log,
-)
+_HYDRATOR = GraphStateHydrator()
 
 
 def _default_log_path() -> Path:
-    return Path.cwd() / "logs" / "company_state.json"
+    return _HYDRATOR.default_log_path()
 
 
-def save_company_state(state: CompanyState, filepath: Path | str | None = None) -> Path:
-    """Atomically persist CompanyState to JSON file."""
-    path = Path(filepath) if filepath else _default_log_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-
-    # Serialize with nice formatting
-    payload = json.dumps(state, indent=2, ensure_ascii=False)
-
-    # Atomic write via temp file + replace with Windows retry fallback
-    temp_dir = path.parent
-    with tempfile.NamedTemporaryFile("w", dir=temp_dir, delete=False, encoding="utf-8") as tf:
-        tf.write(payload)
-        temp_name = tf.name
-
-    try:
-        os.replace(temp_name, path)
-    except PermissionError:
-        # On Windows, retry briefly or fallback to direct write on file contention
-        replaced = False
-        for _ in range(5):
-            time.sleep(0.05)
-            try:
-                os.replace(temp_name, path)
-                replaced = True
-                break
-            except PermissionError:
-                pass
-        if not replaced:
-            path.write_text(payload, encoding="utf-8")
-            with contextlib.suppress(OSError):
-                os.unlink(temp_name)
-    return path
+def save_graph_state(state: GraphState, filepath: Path | str | None = None) -> Path:
+    return _HYDRATOR.save(state, filepath)
 
 
-def load_company_state(filepath: Path | str | None = None) -> CompanyState | None:
-    """Load previously persisted CompanyState from JSON file if it exists."""
-    path = Path(filepath) if filepath else _default_log_path()
-    if not path.is_file():
-        return None
-
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-        if not isinstance(data, dict):
-            return None
-        # Validate required keys
-        required = (
-            "project_id",
-            "user_requirement",
-            "current_phase",
-            "code_files",
-            "completed_tasks",
-            "retry_count",
-        )
-        if not all(k in data for k in required):
-            return None
-        return CompanyState(
-            project_id=data["project_id"],
-            user_requirement=data["user_requirement"],
-            current_phase=data["current_phase"],
-            architecture_spec=data.get("architecture_spec"),
-            code_files=dict(data.get("code_files") or {}),
-            test_results=data.get("test_results"),
-            execution_logs=list(data.get("execution_logs") or []),
-            completed_tasks=list(data.get("completed_tasks") or []),
-            failed_tasks=list(data.get("failed_tasks") or []),
-            error_message=data.get("error_message"),
-            retry_count=int(data.get("retry_count") or 0),
-        )
-    except (json.JSONDecodeError, OSError, KeyError, TypeError, ValueError):
-        return None
+def save_company_state(state: GraphState, filepath: Path | str | None = None) -> Path:
+    return _HYDRATOR.save(state, filepath)
 
 
-def can_resume(state: CompanyState | None) -> bool:
-    """Check if state contains an interrupted or incomplete execution."""
-    if state is None:
-        return False
-    return state.get("current_phase") != PHASE_COMPLETED
+def load_graph_state(filepath: Path | str | None = None) -> GraphState | None:
+    return _HYDRATOR.load(filepath)
 
 
-def determine_next_incomplete_phase(state: CompanyState) -> str:
-    """Determine the next operational phase based on completed tasks."""
-    completed = set(state.get("completed_tasks") or [])
-    if "architecture" not in completed or not state.get("architecture_spec"):
-        return PHASE_ARCHITECT
-    if "code" not in completed:
-        return PHASE_CODER
-    if "devops" not in completed:
-        return PHASE_DEVOPS
-    if "qa" not in completed:
-        return PHASE_QA
-    return PHASE_COMPLETED
+def load_company_state(filepath: Path | str | None = None) -> GraphState | None:
+    return _HYDRATOR.load(filepath)
 
 
-def hydrate_resumed_state(state: CompanyState) -> CompanyState:
-    """Hydrate state to resume strictly from the last incomplete node, skipping completed tasks."""
-    next_phase = determine_next_incomplete_phase(state)
-    updated_logs = append_execution_log(
-        state.get("execution_logs") or [],
-        agent="system",
-        phase=next_phase,
-        message=(
-            f"Resuming execution from incomplete phase: {next_phase}. "
-            f"Skipping completed: {state.get('completed_tasks')}"
-        ),
-    )
-    resumed = CompanyState(
-        project_id=state["project_id"],
-        user_requirement=state["user_requirement"],
-        current_phase=next_phase,
-        architecture_spec=state.get("architecture_spec"),
-        code_files=dict(state.get("code_files") or {}),
-        test_results=state.get("test_results"),
-        execution_logs=updated_logs,
-        completed_tasks=list(state.get("completed_tasks") or []),
-        failed_tasks=list(state.get("failed_tasks") or []),
-        error_message=state.get("error_message"),
-        retry_count=state.get("retry_count", 0),
-    )
-    return resumed
+def can_resume(state: GraphState | None) -> bool:
+    return _HYDRATOR.can_resume(state)
 
 
-class JsonStateCheckpointer(MemorySaver):
-    """LangGraph Checkpointer that mirrors state checkpoints to json after every step."""
+def determine_next_incomplete_phase(state: GraphState) -> str:
+    return _HYDRATOR.determine_next_incomplete_phase(state)
 
-    def __init__(self, log_path: Path | str | None = None) -> None:
-        super().__init__()
-        self.log_path = Path(log_path) if log_path else _default_log_path()
 
-    def put(
-        self,
-        config: RunnableConfig,
-        checkpoint: Checkpoint,
-        metadata: CheckpointMetadata,
-        new_versions: ChannelVersions,
-    ) -> RunnableConfig:
-        res = super().put(config, checkpoint, metadata, new_versions)
-        self._write_snapshot(checkpoint)
-        return res
+def hydrate_resumed_state(state: GraphState) -> GraphState:
+    return _HYDRATOR.hydrate(state)
 
-    async def aput(
-        self,
-        config: RunnableConfig,
-        checkpoint: Checkpoint,
-        metadata: CheckpointMetadata,
-        new_versions: ChannelVersions,
-    ) -> RunnableConfig:
-        res = await super().aput(config, checkpoint, metadata, new_versions)
-        self._write_snapshot(checkpoint)
-        return res
 
-    def _write_snapshot(self, checkpoint: Checkpoint) -> None:
-        channel_values = checkpoint.get("channel_values", {})
-        # Find company state channel
-        state_candidate = None
-        if "company_state" in channel_values:
-            state_candidate = channel_values["company_state"]
-        elif channel_values and any(k in channel_values for k in ("project_id", "current_phase")):
-            state_candidate = channel_values
-
-        if isinstance(state_candidate, dict) and "project_id" in state_candidate:
-            save_company_state(state_candidate, self.log_path)  # type: ignore[arg-type]
+__all__ = [
+    "GraphStateHydrator",
+    "JsonStateCheckpointer",
+    "_default_log_path",
+    "can_resume",
+    "determine_next_incomplete_phase",
+    "hydrate_resumed_state",
+    "load_company_state",
+    "load_graph_state",
+    "save_company_state",
+    "save_graph_state",
+]

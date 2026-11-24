@@ -1,44 +1,110 @@
-"""Code-Test-Fix Sub-Graph for LangGraph Orchestration.
+"""DEPRECATED: Compatibility shim for the OOP Code-Test-Fix sub-graph.
 
-Executes source code synthesis, test harness environment setup, automated test execution,
-and self-correction loops when assertions fail.
+Prefer ``app.infrastructure.orchestration.CoderQASubGraphBuilder``.
 """
 
 from __future__ import annotations
 
-from collections.abc import Callable
+__deprecated__ = True
+
+from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any, cast
 
 from app.application.tools.registry import DynamicToolRegistry
-from app.application.tools.retriever import ToolRetriever
-from langgraph.graph import END, StateGraph
+from app.domain.ports import TestRunResult
+from app.infrastructure.orchestration.adapters import LocalCodeWorkspaceRunner
+from app.infrastructure.orchestration.subgraphs.coder_qa import (
+    CoderNode,
+    CoderQARoutePolicy,
+    CoderQASubGraphBuilder,
+    CodeSynthesisService,
+    DevOpsEnvironmentService,
+    DevOpsTestNode,
+    EvaluatorNode,
+    TaskDecompositionStrategy,
+    TestResultEvaluator,
+)
+from langgraph.graph import StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
-from company_core.agents.devops_engineer import DevOpsEngineerAgent
-from company_core.agents.quality_assurance import QualityAssuranceAgent
-from company_core.agents.software_engineer import SoftwareEngineerAgent
-from company_core.state import (
-    PHASE_CODER,
-    PHASE_DEVOPS,
-    PHASE_QA,
-    STATUS_COMPLETED,
-    STATUS_RUNNING,
-    CompanyState,
-    GraphState,
-    append_execution_log,
-)
+from company_core.state import GraphState
 
 
-def _resolve_project_dir(
-    project_id: str,
-    resolver: Callable[[str], Path] | None = None,
-) -> Path:
-    if resolver:
-        return resolver(project_id)
-    base = Path.cwd() / "projects" / project_id
-    base.mkdir(parents=True, exist_ok=True)
-    return base
+class _LegacyCompanyCoreWorkspaceAdapter:
+    """Adapts ``ICodeWorkspaceRunner`` to preserve legacy ``run_pytest_suite`` monkeypatches."""
+
+    def __init__(
+        self,
+        project_root_resolver: Callable[[str], Path] | None = None,
+        file_runner: LocalCodeWorkspaceRunner | None = None,
+    ) -> None:
+        self._project_root_resolver = project_root_resolver
+        self._file_runner = file_runner if file_runner is not None else LocalCodeWorkspaceRunner()
+
+    def resolve_project_dir(self, project_id: str) -> Path:
+        if self._project_root_resolver is not None:
+            return self._project_root_resolver(project_id)
+        base = Path.cwd() / "projects" / project_id
+        base.mkdir(parents=True, exist_ok=True)
+        return base
+
+    def write_files(self, target_dir: Path, files: Mapping[str, str]) -> list[str]:
+        return self._file_runner.write_files(target_dir, files)
+
+    def read_files(
+        self,
+        target_dir: Path,
+        extensions: tuple[str, ...] = (".py", ".json", ".yaml", ".yml", ".md", ".txt"),
+    ) -> dict[str, str]:
+        return self._file_runner.read_files(target_dir, extensions=extensions)
+
+    def summarize_code(
+        self,
+        files: Mapping[str, str],
+        max_lines_per_file: int = 50,
+        strip_comments: bool = True,
+    ) -> str:
+        return self._file_runner.summarize_code(
+            files,
+            max_lines_per_file=max_lines_per_file,
+            strip_comments=strip_comments,
+        )
+
+    def run_tests(self, target_dir: Path, timeout_s: float = 30.0) -> TestRunResult:
+        from company_core.agents import quality_assurance as qa_module
+
+        qa_runner = cast(
+            "Callable[..., tuple[bool, str, str]]",
+            vars(qa_module)["run_pytest_suite"],
+        )
+        success, combined_output, clean_traceback = qa_runner(
+            target_dir,
+            timeout_s=timeout_s,
+        )
+        if success:
+            return TestRunResult.passed(combined_output or "All tests passed.")
+        return TestRunResult.failed(
+            combined_output or clean_traceback,
+            clean_traceback=clean_traceback or None,
+        )
+
+
+def _build_legacy_builder(
+    project_root_resolver: Callable[[str], Path] | None = None,
+    tool_registry: DynamicToolRegistry | None = None,
+    simulate_initial_bug: bool = False,
+    max_retries: int = 3,
+    timeout_s: float = 30.0,
+) -> CoderQASubGraphBuilder:
+    adapter = _LegacyCompanyCoreWorkspaceAdapter(project_root_resolver=project_root_resolver)
+    return CoderQASubGraphBuilder(
+        workspace_runner=adapter,
+        tool_registry=tool_registry,
+        simulate_initial_bug=simulate_initial_bug,
+        max_retries=max_retries,
+        timeout_s=timeout_s,
+    )
 
 
 def make_coder_node(
@@ -46,177 +112,34 @@ def make_coder_node(
     tool_registry: DynamicToolRegistry | None = None,
     simulate_initial_bug: bool = False,
 ) -> Callable[[GraphState], GraphState]:
-    """Create coder_node with JIT tool discovery and self-correction capability."""
-
-    def coder_node(state: GraphState) -> GraphState:
-        project_dir = _resolve_project_dir(
-            state.get("project_id", "vibe-app"), project_root_resolver
-        )
-        retry_count = state.get("retry_count", 0)
-        has_error = bool(state.get("error_message"))
-
-        # JIT Dynamic Tool Retrieval: query and inject only relevant tool schemas
-        active_tools_meta: list[dict[str, Any]] = []
-        if tool_registry:
-            retriever = ToolRetriever(tool_registry)
-            # Query relevant coder tools (e.g. file writing / inspection)
-            tool_matches = retriever.search_available_tools("file write view edit")
-            active_tools_meta = [
-                {"name": t["name"], "category": t["category"], "summary": t["summary"]}
-                for t in tool_matches
-            ]
-
-        # Use SoftwareEngineerAgent for code generation and self-correction
-        agent = SoftwareEngineerAgent(
-            project_root_resolver=lambda _: project_dir,
-            simulate_initial_bug=simulate_initial_bug,
-        )
-
-        existing_files = state.get("code_files") or {}
-        req = state.get("user_requirement", "")
-
-        if has_error and retry_count > 0:
-            error_msg = state.get("error_message") or ""
-            code_files = agent.apply_self_correction(req, error_context=error_msg)
-            msg = (
-                f"Coder: Applying self-correction patch based on QA traceback "
-                f"(Attempt #{retry_count})."
-            )
-        else:
-            code_files = agent.synthesize_code(req, simulate_bug=simulate_initial_bug)
-            msg = "Coder: Implemented core source files and test fixtures."
-
-        # Merge code files and persist to workspace
-        merged_files = {**existing_files, **code_files}
-        from company_core.tools import write_project_files
-
-        write_project_files(project_dir, merged_files)
-
-        completed = list(state.get("completed_tasks") or [])
-        if "code" not in completed:
-            completed.append("code")
-
-        logs = append_execution_log(
-            state.get("execution_logs") or [],
-            agent="coder",
-            phase=PHASE_CODER,
-            message=msg,
-            details={"written_files": list(code_files.keys()), "attempt": retry_count},
-        )
-
-        sub_results = dict(state.get("subgraph_results") or {})
-        sub_results["coder"] = {
-            "written_files": list(code_files.keys()),
-            "retry_count": retry_count,
-            "status": "ready_for_test",
-        }
-
-        return {
-            **state,
-            "code_files": merged_files,
-            "completed_tasks": completed,
-            "active_tools": active_tools_meta,
-            "subgraph_results": sub_results,
-            "current_node": "coder_node",
-            "current_phase": PHASE_DEVOPS,
-            "execution_logs": logs,
-        }
-
-    return coder_node
+    builder = _build_legacy_builder(
+        project_root_resolver=project_root_resolver,
+        tool_registry=tool_registry,
+        simulate_initial_bug=simulate_initial_bug,
+    )
+    return cast("Callable[[GraphState], GraphState]", builder.coder_node.execute)
 
 
 def make_devops_test_node(
     project_root_resolver: Callable[[str], Path] | None = None,
 ) -> Callable[[GraphState], GraphState]:
-    """Create devops_test_node configuring requirements and pytest runner harness."""
-
-    def devops_test_node(state: GraphState) -> GraphState:
-        project_dir = _resolve_project_dir(
-            state.get("project_id", "vibe-app"), project_root_resolver
-        )
-        agent = DevOpsEngineerAgent(project_root_resolver=lambda _: project_dir)
-
-        # Build execution state for DevOps agent
-        updated = agent.execute(state)
-
-        logs = append_execution_log(
-            updated.get("execution_logs") or [],
-            agent="devops",
-            phase=PHASE_DEVOPS,
-            message="DevOps: Configured requirements.txt and pytest execution harness.",
-        )
-
-        sub_results = dict(updated.get("subgraph_results") or {})
-        sub_results["devops"] = {"status": "configured"}
-
-        return {
-            **updated,
-            "current_node": "devops_test_node",
-            "current_phase": PHASE_QA,
-            "subgraph_results": sub_results,
-            "execution_logs": logs,
-        }
-
-    return devops_test_node
+    builder = _build_legacy_builder(project_root_resolver=project_root_resolver)
+    return cast("Callable[[GraphState], GraphState]", builder.devops_test_node.execute)
 
 
 def make_evaluator_node(
     project_root_resolver: Callable[[str], Path] | None = None,
     timeout_s: float = 30.0,
 ) -> Callable[[GraphState], GraphState]:
-    """Create evaluator_node executing pytest suite and validating test results."""
-
-    def evaluator_node(state: GraphState) -> GraphState:
-        project_dir = _resolve_project_dir(
-            state.get("project_id", "vibe-app"), project_root_resolver
-        )
-        agent = QualityAssuranceAgent(
-            project_root_resolver=lambda _: project_dir,
-            timeout_seconds=timeout_s,
-        )
-
-        evaluated = agent.execute(state)
-
-        test_results = evaluated.get("test_results") or ""
-        passed = "PASSED" in test_results
-
-        sub_results = dict(evaluated.get("subgraph_results") or {})
-        sub_results["qa"] = {
-            "passed": passed,
-            "test_summary": test_results.splitlines()[0] if test_results else "No output",
-            "retry_count": evaluated.get("retry_count", 0),
-        }
-
-        return {
-            **evaluated,
-            "status": STATUS_COMPLETED if passed else evaluated.get("status", STATUS_RUNNING),
-            "current_node": "evaluator_node",
-            "subgraph_results": sub_results,
-        }
-
-    return evaluator_node
+    builder = _build_legacy_builder(
+        project_root_resolver=project_root_resolver,
+        timeout_s=timeout_s,
+    )
+    return cast("Callable[[GraphState], GraphState]", builder.evaluator_node.execute)
 
 
 def make_coder_qa_route(max_retries: int = 3) -> Callable[[GraphState], str]:
-    """Evaluate test results to decide between self-correction loop vs exit."""
-
-    def route_after_evaluator(state: GraphState) -> str:
-        test_results = state.get("test_results") or ""
-        passed = "PASSED" in test_results
-
-        if passed:
-            return END
-
-        retries = state.get("retry_count", 0)
-        limit = state.get("max_retries", max_retries)
-        if retries < limit:
-            # Self-Correction Loop: return to coder with error context and traceback
-            return "coder_node"
-
-        # Retry limit reached: exit sub-graph so parent graph or task decomposer can handle
-        return END
-
-    return route_after_evaluator
+    return CoderQARoutePolicy(default_max_retries=max_retries)
 
 
 def create_coder_qa_subgraph(
@@ -225,38 +148,12 @@ def create_coder_qa_subgraph(
     simulate_initial_bug: bool = False,
     max_retries: int = 3,
 ) -> StateGraph[Any, Any, Any, Any]:
-    """Construct the Code-Test-Fix Sub-Graph with self-correction looping."""
-    subgraph: StateGraph[Any, Any, Any, Any] = StateGraph(CompanyState)
-
-    subgraph.add_node(
-        "coder_node",
-        cast(
-            Any,
-            make_coder_node(
-                project_root_resolver=project_root_resolver,
-                tool_registry=tool_registry,
-                simulate_initial_bug=simulate_initial_bug,
-            ),
-        ),
-    )
-    subgraph.add_node("devops_test_node", cast(Any, make_devops_test_node(project_root_resolver)))
-    subgraph.add_node("evaluator_node", cast(Any, make_evaluator_node(project_root_resolver)))
-
-    subgraph.set_entry_point("coder_node")
-    subgraph.add_edge("coder_node", "devops_test_node")
-    subgraph.add_edge("devops_test_node", "evaluator_node")
-
-    # Conditional Edge: Self-Correction loop on failure vs exit
-    subgraph.add_conditional_edges(
-        "evaluator_node",
-        make_coder_qa_route(max_retries=max_retries),
-        {
-            "coder_node": "coder_node",
-            END: END,
-        },
-    )
-
-    return subgraph
+    return _build_legacy_builder(
+        project_root_resolver=project_root_resolver,
+        tool_registry=tool_registry,
+        simulate_initial_bug=simulate_initial_bug,
+        max_retries=max_retries,
+    ).build()
 
 
 def compile_coder_qa_subgraph(
@@ -265,17 +162,24 @@ def compile_coder_qa_subgraph(
     simulate_initial_bug: bool = False,
     max_retries: int = 3,
 ) -> CompiledStateGraph[Any, Any, Any, Any]:
-    """Compile the Code-Test-Fix Sub-Graph ready for execution."""
-    subgraph = create_coder_qa_subgraph(
+    return _build_legacy_builder(
         project_root_resolver=project_root_resolver,
         tool_registry=tool_registry,
         simulate_initial_bug=simulate_initial_bug,
         max_retries=max_retries,
-    )
-    return subgraph.compile()
+    ).compile()
 
 
 __all__ = [
+    "CodeSynthesisService",
+    "CoderNode",
+    "CoderQARoutePolicy",
+    "CoderQASubGraphBuilder",
+    "DevOpsEnvironmentService",
+    "DevOpsTestNode",
+    "EvaluatorNode",
+    "TaskDecompositionStrategy",
+    "TestResultEvaluator",
     "compile_coder_qa_subgraph",
     "create_coder_qa_subgraph",
     "make_coder_node",

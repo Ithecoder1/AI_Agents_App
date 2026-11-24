@@ -23,6 +23,12 @@ from app.infrastructure.config import (
     load_provider_configs,
     load_settings,
 )
+from app.infrastructure.orchestration import (
+    MermaidWorkflowVisualizer,
+    OrchestratorEngineFactory,
+    StartupNodeEventMapper,
+    TurnOrchestratorService,
+)
 from app.infrastructure.persistence import (
     SqlAlchemyChatRepository,
     create_engine,
@@ -52,7 +58,20 @@ def build_registry(
     Provider problems never abort startup; they appear as ``FAILED`` entries.
     """
     settings = load_settings(config_dir, env)
-    registry = ProviderRegistry(ProviderDeps(secrets=EnvSecretResolver(env)))
+    engine_factory = OrchestratorEngineFactory()
+    default_engine = engine_factory.create(
+        workspace_dir=config_dir.parent / "projects",
+        checkpoint_path=config_dir.parent / "logs" / "company_state.json",
+    )
+    registry = ProviderRegistry(
+        ProviderDeps(
+            secrets=EnvSecretResolver(env),
+            orchestrator_engine=default_engine,
+            orchestrator_engine_factory=engine_factory,
+            mermaid_visualizer=MermaidWorkflowVisualizer(),
+            node_event_mapper_factory=StartupNodeEventMapper,
+        )
+    )
 
     result = load_provider_configs(config_dir / "providers.yaml", env)
     for config in result.configs:
@@ -117,12 +136,14 @@ def build_chat_services(
     chat_repo = SqlAlchemyChatRepository(session_factory)
     chat_session_service = ChatSessionService(chat_repo)
     tools = tool_registry if tool_registry is not None else load_tool_registry(base / "config")
+    turn_orchestrator = TurnOrchestratorService(tool_registry=tools)
     chat_turn_service = ChatTurnService(
         chat_session_service,
         chat_repo,
         registry,
         workspace_manager,
         tool_registry=tools,
+        turn_orchestrator=turn_orchestrator,
     )
     return engine, chat_repo, chat_session_service, chat_turn_service
 

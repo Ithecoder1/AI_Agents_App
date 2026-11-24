@@ -1,9 +1,4 @@
-"""Autonomous Startup Orchestrator — CLI Entrypoint.
-
-Orchestrates specialized agents (CEO, Architect, Coder, DevOps, QA, Task Decomposer)
-using LangGraph, maintaining persistent local state in logs/company_state.json with
-resume-on-failure capabilities.
-"""
+"""Autonomous Startup Orchestrator — CLI Entrypoint consuming the OrchestratorEngine facade."""
 
 from __future__ import annotations
 
@@ -11,7 +6,6 @@ import argparse
 import sys
 from pathlib import Path
 
-# Ensure backend and workspace root are on sys.path
 WORKSPACE_ROOT = Path(__file__).resolve().parent
 BACKEND_ROOT = WORKSPACE_ROOT / "project" / "backend"
 if str(BACKEND_ROOT) not in sys.path:
@@ -19,37 +13,44 @@ if str(BACKEND_ROOT) not in sys.path:
 if str(WORKSPACE_ROOT) not in sys.path:
     sys.path.insert(0, str(WORKSPACE_ROOT))
 
-from company_core.orchestrator import AutonomousStartupOrchestrator
-from company_core.persistence import (
-    can_resume,
-    load_company_state,
+from app.domain.graph_state import PHASE_COMPLETED, GraphState
+from app.infrastructure.orchestration import (
+    GraphStateHydrator,
+    LocalCodeWorkspaceRunner,
+    OrchestratorDependencies,
+    OrchestratorEngine,
 )
-from company_core.state import (
-    PHASE_COMPLETED,
-    CompanyState,
+
+DEFAULT_REQUIREMENT = (
+    "Implement a deterministic arithmetic calculator engine that evaluates "
+    "1+1 and basic addition expressions"
 )
 
 
 def run_orchestrator(
-    user_requirement: str = "Implement a deterministic arithmetic calculator engine that evaluates 1+1 and basic addition expressions",
+    user_requirement: str = DEFAULT_REQUIREMENT,
     project_id: str = "vibe-app",
     *,
     resume_if_possible: bool = True,
     reset_state: bool = False,
     simulate_initial_bug: bool = False,
     checkpoint_file: str = "logs/company_state.json",
-    use_master_graph: bool = False,
-) -> CompanyState:
-    """Instantiate and run the AutonomousStartupOrchestrator engine."""
+    use_master_graph: bool = True,
+) -> GraphState:
+    """Instantiate and execute ``OrchestratorEngine`` via the orchestration public facade."""
+    _ = use_master_graph
     checkpoint_path = WORKSPACE_ROOT / checkpoint_file
+    hydrator = GraphStateHydrator(default_workspace_dir=checkpoint_path.parent)
+    workspace_runner = LocalCodeWorkspaceRunner(
+        base_workspace_dir=WORKSPACE_ROOT / "projects"
+    )
 
     if reset_state and checkpoint_path.is_file():
         checkpoint_path.unlink()
         print(f"[*] Reset previous checkpoint: {checkpoint_path}")
 
-    # Inspect previous checkpoint for informative startup diagnostics
-    persisted = load_company_state(checkpoint_path) if resume_if_possible else None
-    if persisted and can_resume(persisted):
+    persisted = hydrator.load(checkpoint_path) if resume_if_possible else None
+    if persisted and hydrator.can_resume(persisted):
         print(f"\n[RESUME] Found existing run for project {persisted['project_id']!r}.")
         print(f"    Last Phase: {persisted.get('current_phase')}")
         print(f"    Completed Tasks: {persisted.get('completed_tasks')}")
@@ -60,34 +61,25 @@ def run_orchestrator(
         )
         print(f"    Requirement: {user_requirement}")
 
-    orchestrator = AutonomousStartupOrchestrator(
+    engine = OrchestratorEngine(
+        dependencies=OrchestratorDependencies(
+            hydrator=hydrator,
+            workspace_runner=workspace_runner,
+        ),
         checkpoint_path=checkpoint_path,
         simulate_initial_bug=simulate_initial_bug,
     )
 
-    engine_label = (
-        "LangGraph Master Graph & Sub-Graphs"
-        if use_master_graph
-        else "LangGraph Engine"
-    )
     print("=" * 70)
-    print(f"  ORCHESTRATION PIPELINE STARTING ({engine_label})")
+    print("  ORCHESTRATION PIPELINE STARTING (OrchestratorEngine Master Graph)")
     print("=" * 70)
 
-    if use_master_graph:
-        final_state = orchestrator.run_master_workflow(
-            user_requirement=user_requirement,
-            project_id=project_id,
-            resume_if_possible=resume_if_possible,
-            reset_state=reset_state,
-        )
-    else:
-        final_state = orchestrator.run(
-            user_requirement=user_requirement,
-            project_id=project_id,
-            resume_if_possible=resume_if_possible,
-            reset_state=reset_state,
-        )
+    final_state = engine.invoke(
+        user_requirement=user_requirement,
+        project_id=project_id,
+        resume_if_possible=resume_if_possible,
+        reset_state=reset_state,
+    )
 
     print("\n" + "=" * 70)
     print("  ORCHESTRATION PIPELINE FINISHED")
@@ -124,14 +116,11 @@ def main() -> None:
     parser.add_argument(
         "--requirement",
         "-r",
-        default="Implement a deterministic arithmetic calculator engine that evaluates 1+1 and basic addition expressions",
+        default=DEFAULT_REQUIREMENT,
         help="Target user requirement",
     )
     parser.add_argument(
-        "--project-id",
-        "-p",
-        default="vibe-app",
-        help="Project workspace ID",
+        "--project-id", "-p", default="vibe-app", help="Project workspace ID"
     )
     parser.add_argument(
         "--resume",
@@ -158,12 +147,11 @@ def main() -> None:
     parser.add_argument(
         "--master-graph",
         action="store_true",
-        default=False,
+        default=True,
         help="Execute using deterministic LangGraph Master Graph with Sub-Graph delegation",
     )
 
     args = parser.parse_args()
-
     run_orchestrator(
         user_requirement=args.requirement,
         project_id=args.project_id,

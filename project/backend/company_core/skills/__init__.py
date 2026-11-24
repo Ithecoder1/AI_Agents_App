@@ -1,31 +1,28 @@
-"""Modular Skills Layer for Dynamic, Intent-Driven LangGraph Orchestration."""
+"""DEPRECATED: Compatibility shim for Modular Skills Layer.
+
+Prefer ``app.infrastructure.orchestration.state.skills``.
+"""
 
 from __future__ import annotations
 
-from company_core.skills.architecture_planning import ArchitecturePlanningSkill
-from company_core.skills.base import OrchestratorSkill, SkillRegistry, SkillSpec
-from company_core.skills.code_analysis import CodeAnalysisSkill
-from company_core.skills.code_verification import CodeVerificationSkill
-from company_core.skills.direct_qa import DirectQASkill
+__deprecated__ = True
 
-_DEFAULT_SKILL_REGISTRY: SkillRegistry | None = None
+from app.infrastructure.orchestration.state.skills import (
+    ArchitecturePlanningSkill,
+    BaseOrchestratorSkill,
+    CodeAnalysisSkill,
+    CodeVerificationSkill,
+    DirectQASkill,
+    OrchestratorSkill,
+    SkillRegistry,
+    SkillSpec,
+)
 
-
-def get_default_skill_registry() -> SkillRegistry:
-    """Return the lazily populated default SkillRegistry singleton."""
-    global _DEFAULT_SKILL_REGISTRY
-    if _DEFAULT_SKILL_REGISTRY is None:
-        registry = SkillRegistry()
-        registry.register(DirectQASkill())
-        registry.register(CodeAnalysisSkill())
-        registry.register(ArchitecturePlanningSkill())
-        registry.register(CodeVerificationSkill())
-        _DEFAULT_SKILL_REGISTRY = registry
-    return _DEFAULT_SKILL_REGISTRY
-
+get_default_skill_registry = SkillRegistry.default
 
 __all__ = [
     "ArchitecturePlanningSkill",
+    "BaseOrchestratorSkill",
     "CodeAnalysisSkill",
     "CodeVerificationSkill",
     "DirectQASkill",

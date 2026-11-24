@@ -155,10 +155,56 @@ class IProfileClassifier(Protocol):
     def get_profile(self, intent_or_task_type: str) -> Any: ...
 
 
+@runtime_checkable
+class IMermaidWorkflowVisualizer(Protocol):
+    """Port for rendering deterministic intent-aware Mermaid workflow diagrams."""
+
+    def generate(
+        self,
+        user_requirement: str,
+        *,
+        status: str = "WAITING_APPROVAL",
+        provider_name: str = "Agent",
+        intent: str | None = None,
+    ) -> str: ...
+
+
+@runtime_checkable
+class INodeEventMapper(Protocol):
+    """Port translating LangGraph node snapshots into UI-facing domain ``StreamEvent`` items."""
+
+    @property
+    def plan_steps(self) -> list[dict[str, str]]: ...
+
+    def map_node(
+        self,
+        task_id: str,
+        attempt: int,
+        node_name: str,
+        state_snapshot: GraphState,
+    ) -> list[StreamEvent]: ...
+
+
+@runtime_checkable
+class IOrchestratorEngineFactory(Protocol):
+    """Factory port creating workspace-scoped ``IOrchestratorEngine`` instances."""
+
+    def create(
+        self,
+        *,
+        workspace_dir: Path,
+        checkpoint_path: Path,
+        max_retries: int = 3,
+    ) -> IOrchestratorEngine: ...
+
+
 __all__ = [
     "ICodeWorkspaceRunner",
+    "IMermaidWorkflowVisualizer",
+    "INodeEventMapper",
     "IOrchestratorCheckpointer",
     "IOrchestratorEngine",
+    "IOrchestratorEngineFactory",
     "IProfileClassifier",
     "ITurnOrchestrator",
     "TestRunResult",

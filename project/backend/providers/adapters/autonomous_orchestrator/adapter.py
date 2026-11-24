@@ -1,7 +1,7 @@
 """Autonomous Startup Orchestrator Provider Adapter.
 
-Bridges the LangGraph multi-agent startup orchestrator with the Vibe Forge execution engine,
-enabling multi-turn chat sessions, live WebSocket streaming, and interactive UI inspection.
+Bridges the LangGraph multi-agent startup orchestrator with the Vibe Forge execution engine
+using injected ``app.domain.ports`` dependencies only.
 """
 
 from __future__ import annotations
@@ -11,6 +11,8 @@ from collections.abc import AsyncIterator
 from pathlib import Path
 
 from app.domain.enums import EventType
+from app.domain.errors import ProviderError
+from app.domain.graph_state import PHASE_COMPLETED, GraphState
 from app.domain.models import (
     AgentProviderConfig,
     ExecutionTask,
@@ -19,83 +21,25 @@ from app.domain.models import (
     StreamEvent,
     Usage,
 )
-from app.domain.ports.agent_provider import ProviderDeps
+from app.domain.ports import INodeEventMapper, IOrchestratorEngine, ProviderDeps
 from app.domain.tools import ToolDescriptor, ToolRetrievalPolicy
-from company_core.orchestrator import AutonomousStartupOrchestrator
-from company_core.state import PHASE_COMPLETED, CompanyState
 
-from providers.adapters.autonomous_orchestrator.event_mapper import StartupNodeEventMapper
 from providers.kit import BaseAgentRunner
 
-
-def generate_mermaid_workflow(user_requirement: str, status: str = "WAITING_APPROVAL") -> str:
-    """Generate deterministic Mermaid diagram syntax representing the planned workflow."""
-    req_lower = user_requirement.lower()
-    is_direct_qa = any(
-        k in req_lower
-        for k in ("what is", "explain", "who is", "help", "hello", "1+1", "1 + 1", "ping")
-    )
-    if is_direct_qa:
-        return (
-            "flowchart LR\n"
-            '    Start([User Query]) --> Triage["⚡ Intent Triage"]\n'
-            '    Triage --> Planner["📋 Direct Planner"]\n'
-            '    Planner --> Executor["⚡ Direct Executor"]\n'
-            "    Executor --> Done([✅ Response Delivered])\n"
-            "    classDef active fill:#6366f1,stroke:#818cf8,stroke-width:2px,color:#fff;\n"
-            "    classDef done fill:#059669,stroke:#10b981,stroke-width:1.5px,color:#fff;\n"
-            "    class Start,Triage,Planner done;\n"
-            "    class Executor active;\n"
-        )
-
-    approval_branch = (
-        '    Planner --> Approval{"⏳ Human Approval"}\n'
-        '    Approval -->|Approved| Router["🔀 Sub-Graph Router"]\n'
-        "    Approval -.->|Cancelled| Abort([🛑 Abort Run])\n"
-        if status == "WAITING_APPROVAL"
-        else (
-            '    Planner --> Approval["✓ Approved"]\n'
-            '    Approval --> Router["🔀 Sub-Graph Router"]\n'
-        )
-    )
-
-    approval_class = (
-        "Approval nodeWaiting;" if status == "WAITING_APPROVAL" else "Approval nodeDone;"
-    )
-
-    return (
-        "flowchart TD\n"
-        '    Start([User Requirement]) --> Triage["⚡ Triage & JIT Discovery"]\n'
-        '    Triage --> Planner["📋 Structured Planner"]\n'
-        f"{approval_branch}"
-        "    Router --> ArchitectSub\n"
-        "\n"
-        '    subgraph ArchitectSub ["🏛️ Architecture Sub-Graph"]\n'
-        '        ReqParser["Requirements Parser"] --> Blueprint["Blueprint Generator"]\n'
-        '        Blueprint --> Validator["Schema & Boundary Validator"]\n'
-        "    end\n"
-        "\n"
-        "    ArchitectSub --> CoderSub\n"
-        "\n"
-        '    subgraph CoderSub ["🧪 Code-Test-Fix Sub-Graph"]\n'
-        '        Coder["💻 Code Synthesis Agent"] --> DevOps["⚙️ DevOps PyTest Harness"]\n'
-        '        DevOps --> QA{"🔍 QA Evaluator"}\n'
-        "        QA -.->|Tests Fail: Self-Correction Loop| Coder\n"
-        "    end\n"
-        "\n"
-        '    QA -->|All Tests Passed| Delivery["🎯 Final Delivery & Verification"]\n'
-        "    Delivery --> Done([✅ Verified Solution])\n"
-        "\n"
-        "    classDef nodeDone fill:#065f46,stroke:#10b981,stroke-width:1.5px,color:#fff;\n"
-        "    classDef nodeWaiting fill:#7c2d12,stroke:#f97316,stroke-width:2px,color:#fff;\n"
-        "    classDef nodeActive fill:#1e1b4b,stroke:#818cf8,stroke-width:2px,color:#fff;\n"
-        "    class Start,Triage,Planner nodeDone;\n"
-        f"    class {approval_class}\n"
-    )
+_DIRECT_QA_KEYWORDS: tuple[str, ...] = (
+    "what is",
+    "explain",
+    "who is",
+    "help",
+    "hello",
+    "1+1",
+    "1 + 1",
+    "ping",
+)
 
 
 class StartupOrchestratorProvider(BaseAgentRunner):
-    """Adapter executing autonomous multi-agent pipelines via LangGraph."""
+    """Adapter executing autonomous multi-agent pipelines via injected domain ports."""
 
     default_capabilities = ProviderCapabilities(
         streaming=True,
@@ -139,6 +83,53 @@ class StartupOrchestratorProvider(BaseAgentRunner):
         except ImportError as exc:
             return HealthStatus.down(f"LangGraph not installed: {exc}")
 
+    @staticmethod
+    def _resolve_workspace_paths(workspace: str | None, task_id: str) -> tuple[Path, Path]:
+        if workspace and Path(workspace).is_dir():
+            target_workspace = Path(workspace)
+        else:
+            target_workspace = Path.cwd() / "projects" / f"project-{task_id[:8]}"
+            target_workspace.mkdir(parents=True, exist_ok=True)
+        return target_workspace, target_workspace / "company_state.json"
+
+    def _resolve_engine(
+        self,
+        *,
+        workspace_dir: Path,
+        checkpoint_path: Path,
+    ) -> IOrchestratorEngine:
+        if self.deps.orchestrator_engine_factory is not None:
+            return self.deps.orchestrator_engine_factory.create(
+                workspace_dir=workspace_dir,
+                checkpoint_path=checkpoint_path,
+                max_retries=self._max_retries,
+            )
+        if self.deps.orchestrator_engine is not None:
+            return self.deps.orchestrator_engine
+        raise ProviderError(
+            "StartupOrchestratorProvider requires orchestrator_engine or "
+            "orchestrator_engine_factory in ProviderDeps.",
+            provider_id=self.config.id,
+        )
+
+    def _render_mermaid(self, user_prompt: str, *, status: str) -> str:
+        visualizer = self.deps.mermaid_visualizer
+        if visualizer is None:
+            raise ProviderError(
+                "StartupOrchestratorProvider requires mermaid_visualizer in ProviderDeps.",
+                provider_id=self.config.id,
+            )
+        return visualizer.generate(user_prompt, status=status)
+
+    def _create_mapper(self) -> INodeEventMapper:
+        mapper_factory = self.deps.node_event_mapper_factory
+        if mapper_factory is None:
+            raise ProviderError(
+                "StartupOrchestratorProvider requires node_event_mapper_factory in ProviderDeps.",
+                provider_id=self.config.id,
+            )
+        return mapper_factory()
+
     async def stream_execute(
         self,
         task: ExecutionTask,
@@ -146,27 +137,26 @@ class StartupOrchestratorProvider(BaseAgentRunner):
         active_tools: list[ToolDescriptor] | tuple[ToolDescriptor, ...] | None = None,
         retrieval_policy: ToolRetrievalPolicy | None = None,
     ) -> AsyncIterator[StreamEvent]:
-        """Stream autonomous startup orchestration events to the chat UI and WebSocket."""
+        """Stream autonomous startup orchestration events using injected domain collaborators."""
+        _ = (active_tools, retrieval_policy)
         task_id = task.id
         attempt = task.attempt or 1
         user_prompt = task.prompt_snapshot.user_prompt.strip()
 
-        # Resolve destination workspace directory
-        if task.workspace and Path(task.workspace).is_dir():  # noqa: ASYNC240
-            target_workspace = Path(task.workspace)
-        else:
-            target_workspace = Path.cwd() / "projects" / f"project-{task_id[:8]}"
-            target_workspace.mkdir(parents=True, exist_ok=True)
-
-        checkpoint_path = target_workspace / "company_state.json"
+        target_workspace, checkpoint_path = await asyncio.to_thread(
+            self._resolve_workspace_paths,
+            task.workspace,
+            task_id,
+        )
+        orchestrator = self._resolve_engine(
+            workspace_dir=target_workspace,
+            checkpoint_path=checkpoint_path,
+        )
+        mapper = self._create_mapper()
 
         require_approval = bool(task.params.extra.get("require_approval", True))
-        is_direct_qa = any(
-            k in user_prompt.lower()
-            for k in ("what is", "explain", "who is", "help", "hello", "1+1", "1 + 1", "ping")
-        )
+        is_direct_qa = any(keyword in user_prompt.lower() for keyword in _DIRECT_QA_KEYWORDS)
 
-        # 1. Initial Status Event
         yield StreamEvent.create(
             task_id,
             attempt,
@@ -175,10 +165,6 @@ class StartupOrchestratorProvider(BaseAgentRunner):
             phase="INITIALIZING",
             message="Autonomous Startup Orchestrator initializing...",
         )
-
-        mapper = StartupNodeEventMapper()
-
-        # 2. Initial Execution Plan Event
         yield StreamEvent.create(
             task_id,
             attempt,
@@ -187,19 +173,16 @@ class StartupOrchestratorProvider(BaseAgentRunner):
             steps=mapper.plan_steps,
         )
 
-        # 3. Mermaid Workflow Graph & Human-in-the-Loop Approval Gating
         is_waiting = require_approval and not is_direct_qa
         initial_status = "WAITING_APPROVAL" if is_waiting else "RUNNING"
-        mermaid_code = generate_mermaid_workflow(user_prompt, status=initial_status)
+        mermaid_code = self._render_mermaid(user_prompt, status=initial_status)
 
-        if require_approval and not is_direct_qa:
-            # Register events before yielding so callers can approve immediately
+        if is_waiting:
             approval_event = asyncio.Event()
             cancel_event = asyncio.Event()
             self._approvals[task_id] = approval_event
             self._cancellations[task_id] = cancel_event
 
-            # Emit WAITING_APPROVAL status event with Mermaid diagram
             yield StreamEvent.create(
                 task_id,
                 attempt,
@@ -213,7 +196,7 @@ class StartupOrchestratorProvider(BaseAgentRunner):
             try:
                 approve_task = asyncio.create_task(approval_event.wait())
                 cancel_task = asyncio.create_task(cancel_event.wait())
-                _done, _ = await asyncio.wait(
+                await asyncio.wait(
                     [approve_task, cancel_task],
                     return_when=asyncio.FIRST_COMPLETED,
                     timeout=600.0,
@@ -254,8 +237,7 @@ class StartupOrchestratorProvider(BaseAgentRunner):
                 self._approvals.pop(task_id, None)
                 self._cancellations.pop(task_id, None)
 
-            # Approved: emit approved status with updated diagram
-            approved_mermaid = generate_mermaid_workflow(user_prompt, status="APPROVED")
+            approved_mermaid = self._render_mermaid(user_prompt, status="APPROVED")
             yield StreamEvent.create(
                 task_id,
                 attempt,
@@ -266,27 +248,19 @@ class StartupOrchestratorProvider(BaseAgentRunner):
                 mermaid_code=approved_mermaid,
             )
 
-        # 4. Intro Token Output
         yield StreamEvent.create(
             task_id,
             attempt,
             EventType.TOKEN,
-            text=f"### 🚀 Autonomous Startup Orchestrator Initialized\n\n"
-            f"**Workspace:** `{target_workspace}`\n\n"
-            f"**Objective:** {user_prompt}\n\n"
-            f"---\n\n",
+            text=(
+                "### 🚀 Autonomous Startup Orchestrator Initialized\n\n"
+                f"**Workspace:** `{target_workspace}`\n\n"
+                f"**Objective:** {user_prompt}\n\n"
+                "---\n\n"
+            ),
         )
 
-        # Initialize the OOP Orchestrator
-        orchestrator = AutonomousStartupOrchestrator(
-            checkpoint_path=checkpoint_path,
-            max_retries=self._max_retries,
-            project_root_resolver=lambda _: target_workspace,
-        )
-
-        last_state: CompanyState | None = None
-
-        # Stream node execution events
+        last_state: GraphState | None = None
         async for node_name, state_snapshot in orchestrator.astream_nodes(
             user_requirement=user_prompt,
             project_id=f"proj-{task_id[:8]}",
@@ -297,35 +271,31 @@ class StartupOrchestratorProvider(BaseAgentRunner):
             last_state = state_snapshot
             for ev in mapper.map_node(task_id, attempt, node_name, state_snapshot):
                 yield ev
-            await asyncio.sleep(0.01)
+            await asyncio.sleep(0)
 
-        # Final Delivery Summary
         is_completed = last_state is not None and last_state.get("current_phase") == PHASE_COMPLETED
         status_banner = (
             "✅ **COMPLETED SUCCESSFULLY**" if is_completed else "⚠️ **EXECUTION PAUSED**"
         )
-
         total_files = len(last_state.get("code_files") or {}) if last_state else 0
         retries_used = last_state.get("retry_count", 0) if last_state else 0
         phase_str = last_state.get("current_phase") if last_state else "UNKNOWN"
         tasks_str = str(last_state.get("completed_tasks") if last_state else [])
 
         summary_text = (
-            f"\n---\n\n"
+            "\n---\n\n"
             f"### {status_banner}\n\n"
-            f"| Metric | Details |\n"
-            f"|---|---|\n"
+            "| Metric | Details |\n"
+            "|---|---|\n"
             f"| **Final Phase** | `{phase_str}` |\n"
             f"| **Completed Tasks** | `{tasks_str}` |\n"
             f"| **Generated Files** | {total_files} files |\n"
             f"| **Retries / Self-Corrections** | {retries_used} |\n"
             f"| **Local Checkpoint** | `{checkpoint_path}` |\n\n"
-            f"All source files, test fixtures, and artifacts have been written to disk."
+            "All source files, test fixtures, and artifacts have been written to disk."
         )
 
         yield StreamEvent.create(task_id, attempt, EventType.TOKEN, text=summary_text)
-
-        # Report Token Usage
         yield StreamEvent.create(
             task_id,
             attempt,
@@ -336,8 +306,6 @@ class StartupOrchestratorProvider(BaseAgentRunner):
                 reasoning_tokens=250,
             ).to_dict(),
         )
-
-        # Done event
         yield StreamEvent.create(
             task_id,
             attempt,

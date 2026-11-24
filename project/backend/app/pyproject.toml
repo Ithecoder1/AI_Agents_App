@@ -118,3 +118,12 @@ name = "App never imports LLM providers"
 type = "forbidden"
 source_modules = ["app"]
 forbidden_modules = ["providers"]
+
+[[tool.importlinter.contracts]]
+name = "Application layer never imports legacy company_core or orchestration infrastructure"
+type = "forbidden"
+source_modules = ["app.application"]
+forbidden_modules = [
+    "company_core",
+    "app.infrastructure.orchestration",
+]

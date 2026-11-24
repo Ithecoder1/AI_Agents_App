@@ -1,10 +1,7 @@
-"""Node event mapping for Autonomous Startup Orchestrator.
-
-Re-exports StartupNodeEventMapper from company_core.event_mapper for backward compatibility.
-"""
+"""Autonomous Startup Orchestrator provider event mapper re-export (pure domain)."""
 
 from __future__ import annotations
 
-from company_core.event_mapper import StartupNodeEventMapper
+from app.domain.ports import INodeEventMapper
 
-__all__ = ["StartupNodeEventMapper"]
+__all__ = ["INodeEventMapper"]
